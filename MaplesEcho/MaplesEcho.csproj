@@ -1,0 +1,28 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Discord gateway. WebSocket sub-package only — NOT the Discord.Net
+      meta-package — for a smaller transitive footprint and fewer assembly-load
+      problems inside Dalamud. (Plan §5)
+
+      Dalamud plugins ship their non-Dalamud dependencies alongside the DLL, so
+      these must NOT be marked <Private>false</Private>. The Dalamud.NET.Sdk
+      copies referenced package assemblies into the plugin output by default.
+    -->
+    <PackageReference Include="Discord.Net.WebSocket" Version="3.15.3" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,37 @@
+# ---------------------------------------------------------------------------
+# Secrets — never commit anything that could capture a real bot token or a
+# live plugin configuration. The token is stored unencrypted in Dalamud's
+# config folder; keep it off the repo entirely. (Plan §10)
+# ---------------------------------------------------------------------------
+*.token
+*.secret
+secrets.*
+appsettings.*.json
+MaplesEcho.config.json
+**/DalamudConfigs/**
+**/pluginConfigs/**
+config.local.*
+
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+.vs/
+.idea/
+*.DotSettings.user
+
+# Packaged artifacts (built locally)
+dist/
+*.zip
+# ...except the distribution zip the custom repo serves. This is committed so
+# the custom-repo install/update links resolve without a GitHub Release. Rebuild
+# and re-commit it on every version bump. (A GitHub Release is the cleaner
+# long-term host if you'd rather keep binaries out of git.)
+!repo/latest.zip
+
+# OS noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>MaplesEcho.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <!--
+    Link the Dalamud-free pieces of the plugin so their real behavior can be
+    exercised off the game. Everything game/ImGui/Discord-bound is out of scope
+    for these tests (that verification is the in-game session). (Plan §12)
+  -->
+  <ItemGroup>
+    <Compile Include="..\MaplesEcho\GlossaryRule.cs" Link="Linked\GlossaryRule.cs" />
+    <Compile Include="..\MaplesEcho\Services\MessageTransform.cs" Link="Linked\MessageTransform.cs" />
+    <Compile Include="..\MaplesEcho\Services\ColorUtil.cs" Link="Linked\ColorUtil.cs" />
+  </ItemGroup>
+
+</Project>

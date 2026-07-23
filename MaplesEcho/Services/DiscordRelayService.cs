@@ -1,0 +1,290 @@
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using Discord;
+using Discord.WebSocket;
+using Dalamud.Plugin.Services;
+
+namespace MaplesEcho.Services;
+
+public enum RelayState
+{
+    Disconnected,
+    Connecting,
+    Connected,
+    InvalidToken,
+    /// <summary>Connected, but arriving messages have empty content — almost
+    /// always the Message Content privileged intent not enabled. (Plan §10b)</summary>
+    ConnectedNoContent,
+}
+
+/// <summary>
+/// Owns the Discord.Net gateway connection and turns raw messages into
+/// <see cref="RelayMessage"/>s in the store. Discord.Net fires on its own async
+/// context, so anything touching game/plugin state is marshalled to the
+/// framework thread. Handler bodies are wrapped in try/catch because Discord.Net
+/// swallows exceptions thrown inside them. (Plan §5, §8)
+/// </summary>
+public sealed class DiscordRelayService : IDisposable
+{
+    private readonly Configuration config;
+    private readonly MessageStore store;
+    private readonly IFramework framework;
+    private readonly IPluginLog log;
+
+    private DiscordSocketClient? client;
+    private bool disposed;
+
+    /// <summary>Called (on the framework thread) with each speaker name seen.</summary>
+    public Action<string>? OnSpeakerSeen { get; set; }
+
+    /// <summary>Called (on the framework thread) with each stored message, for
+    /// the optional native-chat mirror.</summary>
+    public Action<RelayMessage>? OnMirrorToGameChat { get; set; }
+
+    // --- Status, read from the draw thread ---
+    public RelayState State { get; private set; } = RelayState.Disconnected;
+    public string StatusDetail { get; private set; } = "Not connected. Paste a bot token in settings.";
+    public DateTime? LastMessageReceived { get; private set; }
+
+    public DiscordRelayService(Configuration config, MessageStore store, IFramework framework, IPluginLog log)
+    {
+        this.config = config;
+        this.store = store;
+        this.framework = framework;
+        this.log = log;
+    }
+
+    /// <summary>
+    /// Connect (or reconnect) with the given token. Fire-and-forget from the
+    /// caller's perspective; result is reported through <see cref="State"/>.
+    /// Token whitespace is trimmed — portal copy/paste picks up stray spaces
+    /// constantly and the resulting failure looks like a mystery. (Plan §10b)
+    /// </summary>
+    public async void StartAsync(string token, ulong channelId)
+    {
+        token = token?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(token))
+        {
+            SetState(RelayState.Disconnected, "No token entered.");
+            return;
+        }
+
+        try
+        {
+            await StopInternalAsync();
+
+            SetState(RelayState.Connecting, "Connecting…");
+
+            client = new DiscordSocketClient(new DiscordSocketConfig
+            {
+                GatewayIntents = GatewayIntents.Guilds
+                                 | GatewayIntents.GuildMessages
+                                 | GatewayIntents.MessageContent,
+                MessageCacheSize = 0,
+                LogLevel = LogSeverity.Info,
+            });
+
+            client.Log += OnClientLog;
+            client.MessageReceived += OnMessageReceived;
+            client.Ready += OnReady;
+            client.Disconnected += OnDisconnected;
+
+            await client.LoginAsync(TokenType.Bot, token);
+            await client.StartAsync();
+        }
+        catch (Discord.Net.HttpException http) when (http.HttpCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            log.Error(http, "Discord login rejected the token.");
+            SetState(RelayState.InvalidToken, "Invalid token — check the paste, or regenerate it in the Developer Portal.");
+        }
+        catch (Exception ex)
+        {
+            log.Error(ex, "Failed to start Discord relay.");
+            SetState(RelayState.InvalidToken, $"Login failed: {ex.Message}");
+        }
+    }
+
+    private Task OnReady()
+    {
+        // Connected and the gateway is ready. Whether messages actually arrive
+        // (Message Content intent) is proven only when one does.
+        SetState(RelayState.Connected, "Connected. Waiting for messages…");
+        return Task.CompletedTask;
+    }
+
+    private Task OnDisconnected(Exception ex)
+    {
+        // Discord.Net auto-reconnects; just reflect it. Make it obvious — there's
+        // no audio cue when the relay dies, and an empty window reads as silence. (Plan §9)
+        if (!disposed)
+            SetState(RelayState.Disconnected, "Disconnected — reconnecting…");
+        return Task.CompletedTask;
+    }
+
+    private Task OnClientLog(LogMessage msg)
+    {
+        log.Debug($"[Discord] {msg.Severity}: {msg.Message} {msg.Exception}");
+        return Task.CompletedTask;
+    }
+
+    private Task OnMessageReceived(SocketMessage msg)
+    {
+        // Do the pure, thread-safe work here (filter + transform); marshal only
+        // the state mutation to the framework thread.
+        try
+        {
+            if (!PassesFilter(msg))
+                return Task.CompletedTask;
+
+            var body = MessageTransform.TransformBody(msg.Content, config.Glossary);
+
+            // Defensive embed fallback: some bots put text in embeds. (Plan §5)
+            if (string.IsNullOrWhiteSpace(body) && msg.Embeds.Count > 0)
+            {
+                var embedText = string.Join(" ",
+                    msg.Embeds.Select(e => e.Description ?? e.Title ?? string.Empty));
+                body = MessageTransform.TransformBody(embedText, config.Glossary);
+            }
+
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                // Connected and receiving, but no readable content — the
+                // signature of the Message Content intent being disabled. (Plan §10b)
+                SetState(RelayState.ConnectedNoContent,
+                    "Connected, but messages arrive empty — enable the Message Content intent in the Developer Portal.");
+                return Task.CompletedTask;
+            }
+
+            var speaker = MessageTransform.ExtractSpeaker(msg.Author.Username, config.SpeakerPrefix);
+            var relay = new RelayMessage
+            {
+                Speaker = speaker,
+                Text = body,
+                ReceivedAt = DateTime.Now,
+                SourceMessageId = msg.Id,
+            };
+
+            _ = framework.RunOnFrameworkThread(() =>
+            {
+                store.Add(relay);
+                LastMessageReceived = relay.ReceivedAt;
+                if (State != RelayState.Connected)
+                    SetState(RelayState.Connected, "Connected.");
+                OnSpeakerSeen?.Invoke(speaker);
+                OnMirrorToGameChat?.Invoke(relay);
+            });
+        }
+        catch (Exception ex)
+        {
+            log.Error(ex, "Error handling a Discord message.");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private bool PassesFilter(SocketMessage msg)
+    {
+        if (config.ChannelId != 0 && msg.Channel.Id != config.ChannelId)
+            return false;
+
+        if (config.WebhookMessagesOnly)
+        {
+            var isWebhook = msg.Source == MessageSource.Webhook || msg.Author.IsWebhook;
+            if (!isWebhook)
+                return false;
+
+            // Optional pin to a specific webhook id. For a webhook-sourced
+            // message the author implements IWebhookUser.
+            if (config.SourceWebhookId != 0)
+            {
+                var webhookId = (msg.Author as IWebhookUser)?.WebhookId ?? 0UL;
+                if (webhookId != config.SourceWebhookId)
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Diagnostic: pull the last few messages from the configured channel so the
+    /// pipeline can be verified end-to-end without waiting for someone to talk.
+    /// Distinguishes channel-not-found / no-access from other failures. (Plan §10b)
+    /// </summary>
+    public async Task<string> FetchRecentAsync(int count = 5)
+    {
+        if (client is null || State == RelayState.Disconnected || State == RelayState.InvalidToken)
+            return "Not connected — connect first.";
+
+        try
+        {
+            if (await client.GetChannelAsync(config.ChannelId) is not IMessageChannel channel)
+                return "Channel not found or the bot has no access — check the channel id and the invite permissions.";
+
+            var messages = await channel.GetMessagesAsync(count).FlattenAsync();
+            var list = messages.ToList();
+            if (list.Count == 0)
+                return "Channel reachable, but no recent messages.";
+
+            var withContent = list.Count(m => !string.IsNullOrEmpty(m.Content));
+            var webhookCount = list.Count(m => m.Source == MessageSource.Webhook || m.Author.IsWebhook);
+
+            if (withContent == 0)
+                return $"Fetched {list.Count} message(s), but all had empty content — enable the Message Content intent in the Developer Portal.";
+
+            return $"Fetched {list.Count} message(s): {withContent} with content, {webhookCount} from webhooks. Pipeline looks healthy.";
+        }
+        catch (Exception ex)
+        {
+            log.Error(ex, "FetchRecentAsync failed.");
+            return $"Fetch failed: {ex.Message}";
+        }
+    }
+
+    private void SetState(RelayState state, string detail)
+    {
+        State = state;
+        StatusDetail = detail;
+    }
+
+    private async Task StopInternalAsync()
+    {
+        if (client is null)
+            return;
+
+        client.MessageReceived -= OnMessageReceived;
+        client.Ready -= OnReady;
+        client.Disconnected -= OnDisconnected;
+        client.Log -= OnClientLog;
+
+        try
+        {
+            await client.StopAsync();
+            await client.LogoutAsync();
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Error stopping Discord client.");
+        }
+
+        client.Dispose();
+        client = null;
+    }
+
+    public void Dispose()
+    {
+        disposed = true;
+        // Best-effort synchronous teardown on unload.
+        try
+        {
+            StopInternalAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            log.Warning(ex, "Error during Discord relay dispose.");
+        }
+
+        SetState(RelayState.Disconnected, "Stopped.");
+    }
+}

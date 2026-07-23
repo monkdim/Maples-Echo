@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/Tests/">
+    <Project Path="Tests/MaplesEcho.Tests.csproj" />
+  </Folder>
+  <Project Path="MaplesEcho/MaplesEcho.csproj" />
+</Solution>
