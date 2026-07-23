@@ -3,7 +3,7 @@
     "Author": "monkdim",
     "Name": "Maple's Echo",
     "InternalName": "MaplesEcho",
-    "AssemblyVersion": "0.1.0.0",
+    "AssemblyVersion": "0.1.1.0",
     "Description": "Displays a Discord channel's live voice-to-text callouts inside FFXIV, in a dedicated, fully customizable accessibility window. One-way relay (Discord to game). This repo is configured for one specific setup — fork it and run your own copy. See the README.",
     "Punchline": "An in-game accessibility window for Discord voice-to-text callouts.",
     "RepoUrl": "https://github.com/monkdim/maples-echo",
