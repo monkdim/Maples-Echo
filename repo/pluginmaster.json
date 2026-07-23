@@ -6,15 +6,15 @@
     "AssemblyVersion": "0.1.0.0",
     "Description": "Displays a Discord channel's live voice-to-text callouts inside FFXIV, in a dedicated, fully customizable accessibility window. One-way relay (Discord to game). This repo is configured for one specific setup — fork it and run your own copy. See the README.",
     "Punchline": "An in-game accessibility window for Discord voice-to-text callouts.",
-    "RepoUrl": "https://github.com/monkdim/MaplesEchoV1",
+    "RepoUrl": "https://github.com/monkdim/maples-echo",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 15,
     "Tags": [ "accessibility", "discord", "chat", "relay", "voice-to-text", "captions", "transcription" ],
     "CategoryTags": [ "accessibility", "utility" ],
     "IconUrl": "",
     "DownloadCount": 0,
-    "DownloadLinkInstall": "https://raw.githubusercontent.com/monkdim/MaplesEchoV1/main/repo/latest.zip",
-    "DownloadLinkUpdate": "https://raw.githubusercontent.com/monkdim/MaplesEchoV1/main/repo/latest.zip",
-    "DownloadLinkTesting": "https://raw.githubusercontent.com/monkdim/MaplesEchoV1/main/repo/latest.zip"
+    "DownloadLinkInstall": "https://raw.githubusercontent.com/monkdim/maples-echo/MaplesEchoV1/repo/latest.zip",
+    "DownloadLinkUpdate": "https://raw.githubusercontent.com/monkdim/maples-echo/MaplesEchoV1/repo/latest.zip",
+    "DownloadLinkTesting": "https://raw.githubusercontent.com/monkdim/maples-echo/MaplesEchoV1/repo/latest.zip"
   }
 ]

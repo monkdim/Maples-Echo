@@ -130,50 +130,21 @@ public sealed class DiscordRelayService : IDisposable
 
     private Task OnMessageReceived(SocketMessage msg)
     {
-        // Do the pure, thread-safe work here (filter + transform); marshal only
-        // the state mutation to the framework thread.
         try
         {
             if (!PassesFilter(msg))
                 return Task.CompletedTask;
 
-            var body = MessageTransform.TransformBody(msg.Content, config.Glossary);
-
-            // Defensive embed fallback: some bots put text in embeds. (Plan §5)
-            if (string.IsNullOrWhiteSpace(body) && msg.Embeds.Count > 0)
+            // Empty body after transform, while the message passed the filter,
+            // is the signature of the Message Content intent being disabled. (Plan §10b)
+            if (BuildRelay(msg) is not { } relay)
             {
-                var embedText = string.Join(" ",
-                    msg.Embeds.Select(e => e.Description ?? e.Title ?? string.Empty));
-                body = MessageTransform.TransformBody(embedText, config.Glossary);
-            }
-
-            if (string.IsNullOrWhiteSpace(body))
-            {
-                // Connected and receiving, but no readable content — the
-                // signature of the Message Content intent being disabled. (Plan §10b)
                 SetState(RelayState.ConnectedNoContent,
                     "Connected, but messages arrive empty — enable the Message Content intent in the Developer Portal.");
                 return Task.CompletedTask;
             }
 
-            var speaker = MessageTransform.ExtractSpeaker(msg.Author.Username, config.SpeakerPrefix);
-            var relay = new RelayMessage
-            {
-                Speaker = speaker,
-                Text = body,
-                ReceivedAt = DateTime.Now,
-                SourceMessageId = msg.Id,
-            };
-
-            _ = framework.RunOnFrameworkThread(() =>
-            {
-                store.Add(relay);
-                LastMessageReceived = relay.ReceivedAt;
-                if (State != RelayState.Connected)
-                    SetState(RelayState.Connected, "Connected.");
-                OnSpeakerSeen?.Invoke(speaker);
-                OnMirrorToGameChat?.Invoke(relay);
-            });
+            Enqueue(relay);
         }
         catch (Exception ex)
         {
@@ -183,7 +154,50 @@ public sealed class DiscordRelayService : IDisposable
         return Task.CompletedTask;
     }
 
-    private bool PassesFilter(SocketMessage msg)
+    /// <summary>
+    /// Filter + transform a message into a display-ready <see cref="RelayMessage"/>,
+    /// or null if it has no readable body. Pure and thread-safe; shared by the live
+    /// gateway path and the manual fetch so both relay identically. (Plan §8b)
+    /// </summary>
+    private RelayMessage? BuildRelay(IMessage msg)
+    {
+        var body = MessageTransform.TransformBody(msg.Content, config.Glossary);
+
+        // Defensive embed fallback: some bots put text in embeds. (Plan §5)
+        if (string.IsNullOrWhiteSpace(body) && msg.Embeds.Count > 0)
+        {
+            var embedText = string.Join(" ",
+                msg.Embeds.Select(e => e.Description ?? e.Title ?? string.Empty));
+            body = MessageTransform.TransformBody(embedText, config.Glossary);
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+
+        return new RelayMessage
+        {
+            Speaker = MessageTransform.ExtractSpeaker(msg.Author.Username, config.SpeakerPrefix),
+            Text = body,
+            ReceivedAt = DateTime.Now,
+            SourceMessageId = msg.Id,
+        };
+    }
+
+    /// <summary>Push a built message into the store, on the framework thread. (Plan §8)</summary>
+    private void Enqueue(RelayMessage relay)
+    {
+        _ = framework.RunOnFrameworkThread(() =>
+        {
+            store.Add(relay);
+            LastMessageReceived = relay.ReceivedAt;
+            if (State != RelayState.Connected)
+                SetState(RelayState.Connected, "Connected.");
+            OnSpeakerSeen?.Invoke(relay.Speaker);
+            OnMirrorToGameChat?.Invoke(relay);
+        });
+    }
+
+    private bool PassesFilter(IMessage msg)
     {
         if (config.ChannelId != 0 && msg.Channel.Id != config.ChannelId)
             return false;
@@ -228,12 +242,29 @@ public sealed class DiscordRelayService : IDisposable
                 return "Channel reachable, but no recent messages.";
 
             var withContent = list.Count(m => !string.IsNullOrEmpty(m.Content));
-            var webhookCount = list.Count(m => m.Source == MessageSource.Webhook || m.Author.IsWebhook);
-
             if (withContent == 0)
                 return $"Fetched {list.Count} message(s), but all had empty content — enable the Message Content intent in the Developer Portal.";
 
-            return $"Fetched {list.Count} message(s): {withContent} with content, {webhookCount} from webhooks. Pipeline looks healthy.";
+            // GetMessagesAsync returns newest-first; relay oldest-first so they
+            // land in the window in the right order — and actually SHOW, so this
+            // button demonstrates the relay, not just reports on it.
+            list.Reverse();
+            var relayed = 0;
+            foreach (var m in list)
+            {
+                if (!PassesFilter(m))
+                    continue;
+                if (BuildRelay(m) is { } relay)
+                {
+                    Enqueue(relay);
+                    relayed++;
+                }
+            }
+
+            if (relayed == 0)
+                return $"Fetched {list.Count} message(s), but none passed the filter (webhook-only is on, so plain user/bot messages are skipped). Nothing to show.";
+
+            return $"Fetched {list.Count} message(s) and relayed {relayed} into the window.";
         }
         catch (Exception ex)
         {
