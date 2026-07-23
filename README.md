@@ -16,43 +16,47 @@ relays those messages into the game.
 
 ---
 
-## ⚠️ For other users — fork this first
+## Installing
 
-> **This repo is configured for one specific person's setup. If you want to use
-> Maple's Echo, fork it and run your own copy.**
+Add this custom plugin repository in-game, then install from the plugin list —
+**no fork and no GitHub account needed.** The plugin ships generic; you set up
+your own Discord bot and channel in its settings, stored privately on your own
+machine.
 
-Please don't install directly from this repository. Fork it, for three concrete
-reasons:
+1. In-game, open `/xlsettings` → **Experimental** → **Custom Plugin
+   Repositories**, and paste this URL:
 
-1. **You need your own Discord bot token.** One token supports one gateway
-   session — sharing a token causes connection conflicts and dropped messages.
-   A token also grants access to a bot sitting in someone else's private server.
-   Create your own application in the
-   [Discord Developer Portal](https://discord.com/developers/applications).
-2. **You need your own custom repo URL.** If you install from this repo's
-   `pluginmaster.json`, every update pushed here lands on your machine —
-   including changes made mid-raid for one person's specific needs. Host your own
-   manifest from your fork and control your own updates.
-3. **Support stays with your fork.** Issues, tweaks, and glossary entries
-   specific to your group belong in your repo.
+   ```
+   https://raw.githubusercontent.com/monkdim/maples-echo/MaplesEchoV1/repo/pluginmaster.json
+   ```
 
-### What forking does *not* do
+2. Open `/xlplugins`, search for **Maple's Echo**, and install.
+3. Open settings with `/mapleecho config`, paste your **bot token** and **channel
+   ID** (see *Discord setup* below) on the Connection tab, and click **Save &
+   Connect**. The status turns **green (Connected)** on success; if not, the
+   status text names the failure (bad token / intent not enabled / channel not
+   accessible).
 
-**Plugin settings are stored locally, per user, in Dalamud's own config folder.**
-Installing this plugin cannot read or modify anyone else's token, colors, or
-speaker assignments — that data never leaves each person's machine. Forking is
-about **token ownership, update control, and support boundaries**, not about
-protecting someone else's configuration, which is already isolated by design.
-Installing it will not interfere with the original user, and forking is not a
-security measure for something that isn't at risk.
+### You still need your own Discord bot token
+
+You don't fork anything, but you do need **your own bot**: one bot token supports
+one gateway connection, so everyone runs their own. Creating it is a few minutes,
+one time (see *Discord setup*). The token is entered in-game and never leaves your
+machine.
+
+### Your settings are private to you
+
+Plugin settings — token, colors, speaker assignments, glossary — are stored
+locally, per user, in Dalamud's own config folder. Installing this plugin cannot
+read or modify anyone else's configuration, and yours cannot affect theirs.
 
 ---
 
-## Never commit your bot token
+## Keep your bot token private
 
 Your bot token goes in **exactly one place: the plugin's Settings window**,
-entered at runtime. It is never stored in this repository and must never be
-committed. Dalamud stores it **unencrypted** in its local config folder, so:
+entered at runtime — never in a file or this repository. Dalamud stores it
+**unencrypted** in its local config folder, so:
 
 - Don't share your Dalamud config files.
 - Don't screenshot the Settings → Connection panel with the token revealed.
@@ -72,7 +76,7 @@ committed. Dalamud stores it **unencrypted** in its local config folder, so:
 
 ---
 
-## Discord setup (one-time, done by the developer — not the end user)
+## Discord setup (one-time)
 
 1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
    and **create a new application**.
@@ -89,18 +93,7 @@ committed. Dalamud stores it **unencrypted** in its local config folder, so:
 
 ---
 
-## Install (from a custom repo)
-
-1. In-game, open `/xlsettings` → **Experimental** → **Custom Plugin
-   Repositories**, and add the raw URL to your fork's `pluginmaster.json`.
-2. Open `/xlplugins`, find **Maple's Echo**, and install.
-3. Open the plugin settings (`/mapleecho config`), paste your **bot token** and
-   **channel ID** on the Connection tab, and click **Save & Connect**.
-4. The status indicator turns **green (Connected)** on success. If it doesn't,
-   the status text tells you which of the three failure modes it is (bad token /
-   intent not enabled / channel not accessible).
-
-### Commands
+## Commands
 
 - `/mapleecho` — toggle the relay window.
 - `/mapleecho config` — open settings.
