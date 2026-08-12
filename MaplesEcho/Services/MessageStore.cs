@@ -47,6 +47,37 @@ public sealed class MessageStore
     }
 
     /// <summary>
+    /// Replace the text of a message by its Discord id — transcription bots post
+    /// a partial line and edit in the final text, and the correction must reach
+    /// the screen. Speaker and ReceivedAt are preserved so ordering and merge
+    /// grouping stay stable. Searches from the newest end (edits target recent
+    /// messages). Returns false if the id is no longer in the buffer.
+    /// </summary>
+    public bool UpdateText(ulong sourceMessageId, string newText)
+    {
+        lock (gate)
+        {
+            for (var node = messages.Last; node != null; node = node.Previous)
+            {
+                var m = node.Value;
+                if (m.SourceMessageId != sourceMessageId)
+                    continue;
+
+                node.Value = new RelayMessage
+                {
+                    Speaker = m.Speaker,
+                    Text = newText,
+                    ReceivedAt = m.ReceivedAt,
+                    SourceMessageId = m.SourceMessageId,
+                };
+                return true;
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Snapshot for rendering. Copies under lock so the draw loop iterates a
     /// stable list even as new messages arrive. Cheap at MaxMessages ≈ 200.
     /// </summary>

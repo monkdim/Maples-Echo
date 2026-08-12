@@ -87,6 +87,7 @@ public sealed class DiscordRelayService : IDisposable
 
             client.Log += OnClientLog;
             client.MessageReceived += OnMessageReceived;
+            client.MessageUpdated += OnMessageUpdated;
             client.Ready += OnReady;
             client.Disconnected += OnDisconnected;
 
@@ -149,6 +150,36 @@ public sealed class DiscordRelayService : IDisposable
         catch (Exception ex)
         {
             log.Error(ex, "Error handling a Discord message.");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Transcription bots commonly post a partial line and then EDIT the message
+    /// as the transcription finalizes. Without this, the correction never reaches
+    /// the screen and a wrong callout stays wrong. The edited message runs through
+    /// the same filter + transform as a new one, then patches the stored line by
+    /// id in place — no reordering, no duplicate. Edits to messages that have
+    /// already left the ring buffer (or predate the session) are ignored rather
+    /// than appended out of order. (MessageCacheSize is 0, so the "before" state
+    /// is unavailable — and unnecessary, the id is enough.)
+    /// </summary>
+    private Task OnMessageUpdated(Cacheable<IMessage, ulong> before, SocketMessage after, ISocketMessageChannel channel)
+    {
+        try
+        {
+            if (!PassesFilter(after))
+                return Task.CompletedTask;
+
+            if (BuildRelay(after) is not { } relay)
+                return Task.CompletedTask;
+
+            _ = framework.RunOnFrameworkThread(() => store.UpdateText(after.Id, relay.Text));
+        }
+        catch (Exception ex)
+        {
+            log.Error(ex, "Error handling a Discord message edit.");
         }
 
         return Task.CompletedTask;
@@ -285,6 +316,7 @@ public sealed class DiscordRelayService : IDisposable
             return;
 
         client.MessageReceived -= OnMessageReceived;
+        client.MessageUpdated -= OnMessageUpdated;
         client.Ready -= OnReady;
         client.Disconnected -= OnDisconnected;
         client.Log -= OnClientLog;
