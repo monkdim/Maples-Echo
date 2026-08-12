@@ -26,6 +26,11 @@ public sealed class RelayWindow : Window, IDisposable
 
     private bool stickToBottom = true;
 
+    // "N new messages ↓" pill state: the newest id that was on screen while at
+    // the bottom, and a one-shot jump requested by clicking the pill.
+    private ulong lastSeenAtBottomId;
+    private bool jumpToBottom;
+
     // New-message pulse state: which message id last triggered a flash, when,
     // and the matched keyword's color (null = plain white arrival pulse).
     private ulong lastPulsedId;
@@ -79,7 +84,9 @@ public sealed class RelayWindow : Window, IDisposable
         // Window behavior flags, recomputed each frame from config. Resizable is
         // intentional (never NoResize). NoFocusOnAppearing so a message arriving
         // mid-mechanic can never steal keyboard input — that is a wipe. (Plan §7)
-        var flags = ImGuiWindowFlags.NoFocusOnAppearing;
+        // NoScrollbar on the parent: the message child owns all scrolling, so a
+        // parent scrollbar could only ever appear as a layout glitch.
+        var flags = ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoScrollbar;
         if (config.HideTitleBar)
             flags |= ImGuiWindowFlags.NoTitleBar;
         if (config.LockWindowPosition)
@@ -158,6 +165,8 @@ public sealed class RelayWindow : Window, IDisposable
 
     public override void Draw()
     {
+        HandleFontZoom();
+
         // Live font sizing without an atlas rebuild. Crisp custom-font sizing via
         // ManagedFontAtlas is a later refinement; scale gets the accessibility
         // win (readable size) now, safely. (Plan §7 — "ship size + colors first")
@@ -245,12 +254,76 @@ public sealed class RelayWindow : Window, IDisposable
         }
 
         // Auto-scroll: stick to the bottom only while the user is already there.
-        // Manual scroll-up pauses; scrolling back to the bottom resumes. (Plan §7)
-        if (config.AutoScroll && stickToBottom)
+        // Manual scroll-up pauses; scrolling back to the bottom resumes — or the
+        // pill click forces one jump regardless of the auto-scroll setting. (Plan §7)
+        if ((config.AutoScroll && stickToBottom) || jumpToBottom)
+        {
             ImGui.SetScrollHereY(1f);
+            jumpToBottom = false;
+        }
+
         stickToBottom = ImGui.GetScrollY() >= ImGui.GetScrollMaxY() - 1f;
+        if (stickToBottom && messages.Count > 0)
+            lastSeenAtBottomId = messages[^1].SourceMessageId;
 
         ImGui.EndChild();
+
+        DrawNewMessagesPill(messages);
+    }
+
+    /// <summary>
+    /// Floating "N new messages ↓" pill over the bottom of the log while
+    /// scrolled up and callouts are arriving below — the paused state must
+    /// never read as silence. Click jumps to the newest. In click-through mode
+    /// it's informative only (visible, not clickable). (Plan §7)
+    /// </summary>
+    private void DrawNewMessagesPill(IReadOnlyList<RelayMessage> messages)
+    {
+        if (stickToBottom)
+            return;
+
+        var unseen = 0;
+        for (var i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i].SourceMessageId == lastSeenAtBottomId)
+                break;
+            unseen++;
+        }
+
+        if (unseen == 0)
+            return;
+
+        // The just-ended messages child is the last item; center over its bottom.
+        var min = ImGui.GetItemRectMin();
+        var max = ImGui.GetItemRectMax();
+        var label = unseen == 1 ? "1 new message ↓" : $"{unseen} new messages ↓";
+        var size = ImGui.CalcTextSize(label);
+        var pos = new Vector2(min.X + (max.X - min.X - size.X) * 0.5f, max.Y - size.Y - 10f);
+        ImGui.SetCursorScreenPos(pos);
+        if (ImGui.SmallButton(label))
+            jumpToBottom = true;
+    }
+
+    /// <summary>
+    /// Ctrl+scroll over the window resizes the text — the fastest possible
+    /// "I can't read this right now" recovery, no settings trip. Adjusts the
+    /// combat size while the combat profile is active, the normal size
+    /// otherwise, and persists like the sliders do.
+    /// </summary>
+    private void HandleFontZoom()
+    {
+        var io = ImGui.GetIO();
+        if (!io.KeyCtrl || io.MouseWheel == 0f || !ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows))
+            return;
+
+        var delta = io.MouseWheel;
+        if (CombatActive)
+            config.CombatFontSize = Math.Clamp(config.CombatFontSize + delta, 10f, 48f);
+        else
+            config.FontSize = Math.Clamp(config.FontSize + delta, 10f, 48f);
+        save();
+
+        io.MouseWheel = 0f; // consumed — don't also scroll the log
     }
 
     private void DrawHeader(RelayMessage m)

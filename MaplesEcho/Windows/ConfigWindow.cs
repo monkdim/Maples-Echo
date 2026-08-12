@@ -32,6 +32,8 @@ public sealed class ConfigWindow : Window, IDisposable
 
     private string importBuffer = string.Empty;
     private string backupNotice = string.Empty;
+    private string presetNotice = string.Empty;
+    private bool includeTokenInExport;
 
     public ConfigWindow(Configuration config, DiscordRelayService discord, MessageStore store, Action save)
         : base("Maple's Echo — Settings##MaplesEchoConfig")
@@ -355,20 +357,40 @@ public sealed class ConfigWindow : Window, IDisposable
         if (ImGui.Button("Dark Blue / High Contrast")) { Presets.DarkBlueHighContrast(config); save(); }
         if (ImGui.Button("Large Text")) { Presets.LargeText(config); save(); }
         if (ImGui.Button("Minimal")) { Presets.Minimal(config); save(); }
+
+        ImGui.Separator();
+        ImGui.TextWrapped("Starter content: a curated FFXIV keyword and glossary set (stack, spread, " +
+                          "in, out, …). Merges into your lists without touching anything you've added — " +
+                          "edit or delete freely afterwards on the Glossary & Keywords tab.");
+        if (ImGui.Button("Load FFXIV starter keywords & glossary"))
+        {
+            var (kw, gl) = Presets.ApplyStarterPack(config);
+            save();
+            presetNotice = kw + gl == 0
+                ? "Nothing to add — the starter set is already in your lists."
+                : $"Added {kw} keyword(s) and {gl} glossary rule(s).";
+        }
+
+        if (!string.IsNullOrEmpty(presetNotice))
+            ImGui.TextWrapped(presetNotice);
     }
 
     // ---------------------------------------------------------------- Backup
     private void DrawBackup()
     {
-        ImGui.TextWrapped("Export your full setup — colors, fonts, speakers, glossary, AND the token — " +
-                          "as one string. Treat the exported string as a secret: it contains the token. " +
-                          "Import restores everything from a pasted string.");
+        ImGui.TextWrapped("Export your setup — colors, fonts, speakers, glossary, keywords — as one " +
+                          "string. By default the bot token is NOT included, so the string is safe to " +
+                          "share as a settings pack. Import restores everything from a pasted string; " +
+                          "a token-free import keeps your current token and connection.");
 
+        ImGui.Checkbox("Include bot token (treat the exported string as a secret!)", ref includeTokenInExport);
         if (ImGui.Button("Export to clipboard"))
         {
-            var blob = ConfigBlob.Export(config);
+            var blob = ConfigBlob.Export(config, includeTokenInExport);
             ImGui.SetClipboardText(blob);
-            backupNotice = "Exported to clipboard. It contains your token — keep it private.";
+            backupNotice = includeTokenInExport
+                ? "Exported to clipboard. It contains your token — keep it private."
+                : "Exported to clipboard (token-free — safe to share).";
         }
 
         ImGui.Separator();

@@ -20,9 +20,19 @@ public static class ConfigBlob
         WriteIndented = false,
     };
 
-    public static string Export(Configuration config)
+    /// <summary>
+    /// Export as one string. Token-free by default so the blob is safe to share
+    /// as a settings pack; the token rides along only on explicit request.
+    /// Serializes a copy — the live config is never touched.
+    /// </summary>
+    public static string Export(Configuration config, bool includeToken = false)
     {
-        var json = JsonSerializer.Serialize(config, Options);
+        var copy = new Configuration();
+        CopyInto(config, copy);
+        if (!includeToken)
+            copy.BotToken = string.Empty;
+
+        var json = JsonSerializer.Serialize(copy, Options);
         var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
         return Prefix + b64;
     }
@@ -47,7 +57,12 @@ public static class ConfigBlob
             if (parsed is null)
                 return false;
 
+            // A token-free blob must not wipe a working token — importing a
+            // shared settings pack keeps the connection you already have.
+            var previousToken = target.BotToken;
             CopyInto(parsed, target);
+            if (string.IsNullOrWhiteSpace(target.BotToken))
+                target.BotToken = previousToken;
 
             // A blob exported by a pre-KeywordRules build carries plain-string
             // keywords; upgrade them the same way loading an old config does.

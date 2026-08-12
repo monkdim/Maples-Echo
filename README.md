@@ -60,8 +60,9 @@ entered at runtime — never in a file or this repository. Dalamud stores it
 
 - Don't share your Dalamud config files.
 - Don't screenshot the Settings → Connection panel with the token revealed.
-- The config **export/backup blob contains the token** — treat that string as a
-  secret and never paste it anywhere public.
+- The config export is **token-free by default** and safe to share as a
+  settings pack. If you tick **Include bot token** when exporting, treat that
+  string as a secret and never paste it anywhere public.
 
 ---
 
