@@ -17,6 +17,7 @@ public sealed class ConfigWindow : Window, IDisposable
 {
     private readonly Configuration config;
     private readonly DiscordRelayService discord;
+    private readonly MessageStore store;
     private readonly Action save;
 
     private bool revealToken;
@@ -32,11 +33,12 @@ public sealed class ConfigWindow : Window, IDisposable
     private string importBuffer = string.Empty;
     private string backupNotice = string.Empty;
 
-    public ConfigWindow(Configuration config, DiscordRelayService discord, Action save)
+    public ConfigWindow(Configuration config, DiscordRelayService discord, MessageStore store, Action save)
         : base("Maple's Echo — Settings##MaplesEchoConfig")
     {
         this.config = config;
         this.discord = discord;
+        this.store = store;
         this.save = save;
 
         Size = new Vector2(560, 640);
@@ -149,6 +151,7 @@ public sealed class ConfigWindow : Window, IDisposable
         var opacity = config.BackgroundOpacity;
         if (ImGui.SliderFloat("Background opacity", ref opacity, 0f, 1f))
             config.BackgroundOpacity = opacity;
+        SaveOnRelease();
 
         ColorEditContrast("Message text", () => config.TextColor, v => config.TextColor = v);
         ColorEdit("Speaker name", () => config.AuthorColor, v => config.AuthorColor = v);
@@ -160,10 +163,12 @@ public sealed class ConfigWindow : Window, IDisposable
         var fontSize = config.FontSize;
         if (ImGui.SliderFloat("Font size", ref fontSize, 10f, 42f))
             config.FontSize = fontSize;
+        SaveOnRelease();
 
         var spacing = config.LineSpacing;
         if (ImGui.SliderFloat("Line spacing", ref spacing, 1f, 2.5f))
             config.LineSpacing = spacing;
+        SaveOnRelease();
 
         ImGui.Separator();
 
@@ -175,10 +180,16 @@ public sealed class ConfigWindow : Window, IDisposable
         var mergeWindow = config.MergeWindowSeconds;
         if (ImGui.SliderInt("Merge window (seconds)", ref mergeWindow, 1, 30))
             config.MergeWindowSeconds = mergeWindow;
+        SaveOnRelease();
 
         var maxMessages = config.MaxMessages;
         if (ImGui.SliderInt("Max messages kept", ref maxMessages, 20, 1000))
+        {
             config.MaxMessages = maxMessages;
+            store.SetCapacity(maxMessages);
+        }
+
+        SaveOnRelease();
 
         ImGui.Separator();
 
@@ -312,6 +323,7 @@ public sealed class ConfigWindow : Window, IDisposable
             {
                 channelIdBuffer = config.ChannelId == 0 ? string.Empty : config.ChannelId.ToString();
                 webhookIdBuffer = config.SourceWebhookId == 0 ? string.Empty : config.SourceWebhookId.ToString();
+                store.SetCapacity(config.MaxMessages);
                 save();
                 discord.StartAsync(config.BotToken, config.ChannelId);
                 backupNotice = "Imported and reconnecting.";
@@ -345,6 +357,14 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.SameLine();
         ImGui.TextColored(ok ? new Vector4(0.3f, 0.85f, 0.4f, 1f) : new Vector4(0.95f, 0.6f, 0.2f, 1f),
             ok ? $"{contrast:0.0}:1 AAA" : $"{contrast:0.0}:1 low");
+    }
+
+    /// <summary>Persist the slider drawn immediately above, once its drag ends.
+    /// Sliders apply live for preview but only hit disk on release.</summary>
+    private void SaveOnRelease()
+    {
+        if (ImGui.IsItemDeactivatedAfterEdit())
+            save();
     }
 
     private void CheckSave(string label, Func<bool> get, Action<bool> set)

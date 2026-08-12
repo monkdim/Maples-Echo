@@ -60,7 +60,7 @@ public sealed class Plugin : IDalamudPlugin
         };
 
         relayWindow = new RelayWindow(config, store, discord);
-        configWindow = new ConfigWindow(config, discord, Save);
+        configWindow = new ConfigWindow(config, discord, store, Save);
         windowSystem.AddWindow(relayWindow);
         windowSystem.AddWindow(configWindow);
 

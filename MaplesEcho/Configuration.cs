@@ -56,9 +56,6 @@ public class Configuration : IPluginConfiguration
     // ----- Typography ----------------------------------------------------
     public float FontSize { get; set; } = 18f;
 
-    /// <summary>Font face selector. "Default" uses Dalamud's default font. (Plan §7)</summary>
-    public string FontFace { get; set; } = "Default";
-
     public float LineSpacing { get; set; } = 1.2f;
 
     // ----- Speaker identification ---------------------------------------

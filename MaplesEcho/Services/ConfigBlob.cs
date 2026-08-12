@@ -73,7 +73,6 @@ public static class ConfigBlob
         to.BackgroundOpacity = from.BackgroundOpacity;
 
         to.FontSize = from.FontSize;
-        to.FontFace = from.FontFace;
         to.LineSpacing = from.LineSpacing;
 
         to.ShowSpeakerName = from.ShowSpeakerName;
