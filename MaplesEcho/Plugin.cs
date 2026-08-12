@@ -1,4 +1,5 @@
 using System;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
@@ -39,7 +40,8 @@ public sealed class Plugin : IDalamudPlugin
         ICommandManager commandManager,
         IPluginLog log,
         IFramework framework,
-        IChatGui chatGui)
+        IChatGui chatGui,
+        ICondition condition)
     {
         this.pluginInterface = pluginInterface;
         this.commandManager = commandManager;
@@ -48,6 +50,10 @@ public sealed class Plugin : IDalamudPlugin
         this.chatGui = chatGui;
 
         config = pluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+
+        // Upgrade legacy plain-string keywords (config v1) into keyword rules.
+        if (config.MigrateLegacyKeywords())
+            pluginInterface.SavePluginConfig(config);
 
         store = new MessageStore(config.MaxMessages);
 
@@ -59,7 +65,7 @@ public sealed class Plugin : IDalamudPlugin
             OnMirrorToGameChat = MirrorToGameChat,
         };
 
-        relayWindow = new RelayWindow(config, store, discord, Save);
+        relayWindow = new RelayWindow(config, store, discord, () => condition[ConditionFlag.InCombat], Save);
         configWindow = new ConfigWindow(config, discord, store, Save);
         windowSystem.AddWindow(relayWindow);
         windowSystem.AddWindow(configWindow);

@@ -59,6 +59,7 @@ public sealed class ConfigWindow : Window, IDisposable
         {
             if (ImGui.BeginTabItem("Connection")) { DrawConnection(); ImGui.EndTabItem(); }
             if (ImGui.BeginTabItem("Appearance")) { DrawAppearance(); ImGui.EndTabItem(); }
+            if (ImGui.BeginTabItem("Combat")) { DrawCombat(); ImGui.EndTabItem(); }
             if (ImGui.BeginTabItem("Speakers")) { DrawSpeakers(); ImGui.EndTabItem(); }
             if (ImGui.BeginTabItem("Glossary & Keywords")) { DrawGlossary(); ImGui.EndTabItem(); }
             if (ImGui.BeginTabItem("Presets")) { DrawPresets(); ImGui.EndTabItem(); }
@@ -156,7 +157,7 @@ public sealed class ConfigWindow : Window, IDisposable
         ColorEditContrast("Message text", () => config.TextColor, v => config.TextColor = v);
         ColorEdit("Speaker name", () => config.AuthorColor, v => config.AuthorColor = v);
         ColorEdit("Timestamp", () => config.TimestampColor, v => config.TimestampColor = v);
-        ColorEdit("Keyword highlight", () => config.KeywordColor, v => config.KeywordColor = v);
+        ColorEdit("Keyword highlight (default for new keywords)", () => config.KeywordColor, v => config.KeywordColor = v);
 
         ImGui.Separator();
 
@@ -200,6 +201,29 @@ public sealed class ConfigWindow : Window, IDisposable
         CheckSave("Click-through — window ignores the mouse (uncheck here to move or scroll it)", () => config.ClickThrough, v => config.ClickThrough = v);
         CheckSave("Hide during cutscenes", () => config.HideDuringCutscenes, v => config.HideDuringCutscenes = v);
         CheckSave("Also mirror to game chat log", () => config.AlsoPrintToGameChat, v => config.AlsoPrintToGameChat = v);
+    }
+
+    // ---------------------------------------------------------------- Combat
+    private void DrawCombat()
+    {
+        ImGui.TextWrapped("While in combat, the window can switch to a combat profile automatically: " +
+                          "bigger text, fewer distractions, only the freshest callouts. It reverts the " +
+                          "moment combat ends.");
+        ImGui.Separator();
+
+        CheckSave("Enable combat mode", () => config.CombatModeEnabled, v => config.CombatModeEnabled = v);
+
+        var combatFont = config.CombatFontSize;
+        if (ImGui.SliderFloat("Combat font size", ref combatFont, 10f, 48f))
+            config.CombatFontSize = combatFont;
+        SaveOnRelease();
+
+        CheckSave("Hide timestamps in combat", () => config.CombatHideTimestamps, v => config.CombatHideTimestamps = v);
+
+        var recent = config.CombatRecentSeconds;
+        if (ImGui.SliderInt("Only show the last N seconds (0 = all)", ref recent, 0, 120))
+            config.CombatRecentSeconds = recent;
+        SaveOnRelease();
     }
 
     // ---------------------------------------------------------------- Speakers
@@ -289,14 +313,28 @@ public sealed class ConfigWindow : Window, IDisposable
 
         ImGui.Separator();
         ImGui.TextWrapped("Keywords are emphasized on screen when they appear (your name, \"stack\", " +
-                          "\"spread\", \"tank buster\", \"stop\").");
+                          "\"spread\", \"tank buster\", \"stop\"). Each keyword has its own highlight " +
+                          "color; the first match in the list wins, so put the most important at the top. " +
+                          "\"Whole word\" keeps short callouts like \"in\" from lighting up \"point\".");
 
-        for (var i = 0; i < config.Keywords.Count; i++)
+        for (var i = 0; i < config.KeywordRules.Count; i++)
         {
+            var rule = config.KeywordRules[i];
             ImGui.PushID(1000 + i);
-            ImGui.TextUnformatted(config.Keywords[i]);
+            var enabled = rule.Enabled;
+            if (ImGui.Checkbox("##kwen", ref enabled)) { rule.Enabled = enabled; save(); }
             ImGui.SameLine();
-            if (ImGui.Button("X")) { config.Keywords.RemoveAt(i); save(); ImGui.PopID(); break; }
+            var color = rule.Color;
+            if (ImGui.ColorEdit4("##kwcol", ref color, ImGuiColorEditFlags.NoInputs)) { rule.Color = color; save(); }
+            ImGui.SameLine();
+            var word = rule.Word;
+            ImGui.SetNextItemWidth(160);
+            if (ImGui.InputText("##kwword", ref word, 60)) { rule.Word = word; save(); }
+            ImGui.SameLine();
+            var whole = rule.WholeWord;
+            if (ImGui.Checkbox("whole word", ref whole)) { rule.WholeWord = whole; save(); }
+            ImGui.SameLine();
+            if (ImGui.Button("X")) { config.KeywordRules.RemoveAt(i); save(); ImGui.PopID(); break; }
             ImGui.PopID();
         }
 
@@ -304,7 +342,7 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Add##kw") && !string.IsNullOrWhiteSpace(newKeyword))
         {
-            config.Keywords.Add(newKeyword.Trim());
+            config.KeywordRules.Add(new KeywordRule { Word = newKeyword.Trim(), Color = config.KeywordColor });
             newKeyword = string.Empty;
             save();
         }

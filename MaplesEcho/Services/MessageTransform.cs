@@ -90,6 +90,60 @@ public static class MessageTransform
     public static string TransformBody(string content, IReadOnlyList<GlossaryRule> glossary)
         => ApplyGlossary(CleanMarkdown(content), glossary);
 
+    /// <summary>
+    /// First enabled keyword rule that matches the text, or null. Rule order is
+    /// priority order, so the most important keywords (her name) belong at the
+    /// top of the list and decide the line's highlight color.
+    /// </summary>
+    public static KeywordRule? FirstKeywordMatch(string text, IReadOnlyList<KeywordRule> rules)
+    {
+        if (string.IsNullOrEmpty(text) || rules is null)
+            return null;
+
+        foreach (var rule in rules)
+        {
+            if (!rule.Enabled || string.IsNullOrWhiteSpace(rule.Word))
+                continue;
+            if (ContainsWord(text, rule.Word.Trim(), rule.WholeWord))
+                return rule;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Case-insensitive keyword search. Whole-word mode requires a
+    /// non-alphanumeric character (or the string edge) on both sides of the
+    /// match, so "in"/"out" — THE FFXIV callouts — work without lighting up
+    /// "point" or "shout". Word may be a phrase ("tank buster"); punctuation
+    /// counts as a boundary, so "stack!" still matches "stack".
+    /// </summary>
+    public static bool ContainsWord(string text, string word, bool wholeWord)
+    {
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(word))
+            return false;
+
+        var index = 0;
+        while (index <= text.Length - word.Length)
+        {
+            var next = text.IndexOf(word, index, StringComparison.OrdinalIgnoreCase);
+            if (next < 0)
+                return false;
+            if (!wholeWord)
+                return true;
+
+            var beforeOk = next == 0 || !char.IsLetterOrDigit(text[next - 1]);
+            var after = next + word.Length;
+            var afterOk = after >= text.Length || !char.IsLetterOrDigit(text[after]);
+            if (beforeOk && afterOk)
+                return true;
+
+            index = next + 1;
+        }
+
+        return false;
+    }
+
     private static string ReplaceAll(string source, string find, string replace, StringComparison comparison)
     {
         if (string.IsNullOrEmpty(find))

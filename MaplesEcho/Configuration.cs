@@ -16,7 +16,7 @@ namespace MaplesEcho;
 [Serializable]
 public class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
 
     // ----- Connection ----------------------------------------------------
     /// <summary>Discord bot token. Entered at runtime only — never hardcode,
@@ -82,9 +82,55 @@ public class Configuration : IPluginConfiguration
     /// mistranscriptions of FFXIV jargon. Grows over time.</summary>
     public List<GlossaryRule> Glossary { get; set; } = new();
 
-    /// <summary>Words emphasized on screen when they appear (her name, "stack",
-    /// "spread", "tank buster", "stop", …).</summary>
+    /// <summary>Keywords emphasized on screen when they appear (her name, "stack",
+    /// "spread", "tank buster", "stop", …), each with its own color and
+    /// whole-word setting.</summary>
+    public List<KeywordRule> KeywordRules { get; set; } = new();
+
+    /// <summary>Legacy plain-string keywords (config v1). Migrated into
+    /// <see cref="KeywordRules"/> on load; kept so old configs and backup
+    /// blobs still deserialize.</summary>
     public List<string> Keywords { get; set; } = new();
+
+    /// <summary>
+    /// Convert legacy v1 keywords into rules. Old keywords matched as
+    /// substrings, so migrated rules keep WholeWord off — behavior is
+    /// preserved exactly; the new default only applies to newly added rules.
+    /// Returns true if anything changed (caller should save).
+    /// </summary>
+    public bool MigrateLegacyKeywords()
+    {
+        if (Keywords.Count == 0)
+            return false;
+
+        foreach (var word in Keywords)
+        {
+            var trimmed = word?.Trim() ?? string.Empty;
+            if (trimmed.Length == 0)
+                continue;
+            if (KeywordRules.Exists(r => r.Word.Equals(trimmed, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            KeywordRules.Add(new KeywordRule { Word = trimmed, WholeWord = false, Color = KeywordColor });
+        }
+
+        Keywords.Clear();
+        Version = 2;
+        return true;
+    }
+
+    // ----- Combat mode ---------------------------------------------------
+    /// <summary>Auto-apply a combat profile while InCombat: bigger text, fewer
+    /// distractions, optionally only the freshest callouts. Off by default —
+    /// the window never changes behavior unless she opted in.</summary>
+    public bool CombatModeEnabled { get; set; } = false;
+
+    public float CombatFontSize { get; set; } = 28f;
+
+    public bool CombatHideTimestamps { get; set; } = true;
+
+    /// <summary>In combat, only show messages younger than this. 0 = show all.</summary>
+    public int CombatRecentSeconds { get; set; } = 0;
 
     // ----- Behavior ------------------------------------------------------
     public bool ShowTimestamps { get; set; } = true;

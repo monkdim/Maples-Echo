@@ -48,6 +48,10 @@ public static class ConfigBlob
                 return false;
 
             CopyInto(parsed, target);
+
+            // A blob exported by a pre-KeywordRules build carries plain-string
+            // keywords; upgrade them the same way loading an old config does.
+            target.MigrateLegacyKeywords();
             return true;
         }
         catch (Exception)
@@ -83,7 +87,13 @@ public static class ConfigBlob
         to.MergeWindowSeconds = from.MergeWindowSeconds;
 
         to.Glossary = from.Glossary ?? new();
+        to.KeywordRules = from.KeywordRules ?? new();
         to.Keywords = from.Keywords ?? new();
+
+        to.CombatModeEnabled = from.CombatModeEnabled;
+        to.CombatFontSize = from.CombatFontSize;
+        to.CombatHideTimestamps = from.CombatHideTimestamps;
+        to.CombatRecentSeconds = from.CombatRecentSeconds;
 
         to.ShowTimestamps = from.ShowTimestamps;
         to.Use24HourTime = from.Use24HourTime;

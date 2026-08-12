@@ -21,25 +21,27 @@ public sealed class RelayWindow : Window, IDisposable
     private readonly Configuration config;
     private readonly MessageStore store;
     private readonly DiscordRelayService discord;
+    private readonly Func<bool> inCombat;
     private readonly Action save;
 
     private bool stickToBottom = true;
 
     // New-message pulse state: which message id last triggered a flash, when,
-    // and whether it was a keyword hit (stronger, longer, keyword-colored).
+    // and the matched keyword's color (null = plain white arrival pulse).
     private ulong lastPulsedId;
     private double pulseStart = double.NegativeInfinity;
-    private bool pulseIsKeyword;
+    private Vector4? pulseKeywordColor;
 
     private const float PulseSeconds = 0.4f;
     private const float KeywordPulseSeconds = 0.9f;
 
-    public RelayWindow(Configuration config, MessageStore store, DiscordRelayService discord, Action save)
+    public RelayWindow(Configuration config, MessageStore store, DiscordRelayService discord, Func<bool> inCombat, Action save)
         : base("Maple's Echo##MaplesEchoRelay")
     {
         this.config = config;
         this.store = store;
         this.discord = discord;
+        this.inCombat = inCombat;
         this.save = save;
 
         IsOpen = config.RelayWindowOpen;
@@ -116,30 +118,38 @@ public sealed class RelayWindow : Window, IDisposable
 
         lastPulsedId = newest.SourceMessageId;
         pulseStart = ImGui.GetTime();
-        pulseIsKeyword = ContainsKeyword(newest.Text);
+        pulseKeywordColor = MessageTransform.FirstKeywordMatch(newest.Text, config.KeywordRules)?.Color;
     }
 
     /// <summary>
     /// The visual stand-in for hearing someone start talking: blend the window
     /// background toward a flash color for a beat after each arrival, fading out.
-    /// Keyword hits flash stronger and longer, in the keyword color, so the
-    /// pulse itself says "this one matters" from peripheral vision. (Plan §7)
+    /// Keyword hits flash stronger and longer, in that keyword's own color, so
+    /// the pulse itself says which callout it is from peripheral vision. (Plan §7)
     /// </summary>
     private Vector4 ApplyPulse(Vector4 bg)
     {
         if (!config.FlashOnNewMessage)
             return bg;
 
-        var duration = pulseIsKeyword ? KeywordPulseSeconds : PulseSeconds;
+        var isKeyword = pulseKeywordColor.HasValue;
+        var duration = isKeyword ? KeywordPulseSeconds : PulseSeconds;
         var elapsed = (float)(ImGui.GetTime() - pulseStart);
         if (elapsed < 0f || elapsed >= duration)
             return bg;
 
         var intensity = 1f - elapsed / duration;
-        var flash = pulseIsKeyword ? config.KeywordColor : new Vector4(1f, 1f, 1f, 1f);
-        var strength = pulseIsKeyword ? 0.45f : 0.25f;
+        var flash = pulseKeywordColor ?? new Vector4(1f, 1f, 1f, 1f);
+        var strength = isKeyword ? 0.45f : 0.25f;
         return Vector4.Lerp(bg, flash, intensity * strength);
     }
+
+    // ----- Combat mode: effective values while InCombat --------------------
+    private bool CombatActive => config.CombatModeEnabled && inCombat();
+
+    private float EffectiveFontSize => CombatActive ? config.CombatFontSize : config.FontSize;
+
+    private bool TimestampsVisible => config.ShowTimestamps && !(CombatActive && config.CombatHideTimestamps);
 
     public override void PostDraw()
     {
@@ -151,7 +161,7 @@ public sealed class RelayWindow : Window, IDisposable
         // Live font sizing without an atlas rebuild. Crisp custom-font sizing via
         // ManagedFontAtlas is a later refinement; scale gets the accessibility
         // win (readable size) now, safely. (Plan §7 — "ship size + colors first")
-        ImGui.SetWindowFontScale(Math.Max(0.5f, config.FontSize / FontScaleBaseline));
+        ImGui.SetWindowFontScale(Math.Max(0.5f, EffectiveFontSize / FontScaleBaseline));
 
         DrawStatusBar();
         ImGui.Separator();
@@ -201,13 +211,22 @@ public sealed class RelayWindow : Window, IDisposable
         }
 
         var messages = store.Snapshot();
-        var extraSpacing = MathF.Max(0f, (config.LineSpacing - 1f) * config.FontSize);
+        var extraSpacing = MathF.Max(0f, (config.LineSpacing - 1f) * EffectiveFontSize);
+
+        // In combat, optionally show only the freshest callouts — last fight's
+        // lines are noise exactly when reading time is scarcest.
+        var cutoff = CombatActive && config.CombatRecentSeconds > 0
+            ? DateTime.Now - TimeSpan.FromSeconds(config.CombatRecentSeconds)
+            : DateTime.MinValue;
 
         string? lastSpeaker = null;
         DateTime lastTime = DateTime.MinValue;
 
         foreach (var m in messages)
         {
+            if (m.ReceivedAt < cutoff)
+                continue;
+
             var mergeable = config.MergeConsecutive
                             && lastSpeaker == m.Speaker
                             && (m.ReceivedAt - lastTime).TotalSeconds <= config.MergeWindowSeconds;
@@ -240,13 +259,13 @@ public sealed class RelayWindow : Window, IDisposable
         {
             var color = SpeakerColor(m.Speaker);
             ImGui.TextColored(color, m.Speaker);
-            if (config.ShowTimestamps)
+            if (TimestampsVisible)
             {
                 ImGui.SameLine();
                 ImGui.TextColored(config.TimestampColor, $"  {m.ReceivedAt.ToString(TimeFormat)}");
             }
         }
-        else if (config.ShowTimestamps)
+        else if (TimestampsVisible)
         {
             ImGui.TextColored(config.TimestampColor, m.ReceivedAt.ToString(TimeFormat));
         }
@@ -254,15 +273,15 @@ public sealed class RelayWindow : Window, IDisposable
 
     private void DrawBody(RelayMessage m)
     {
-        var hasKeyword = ContainsKeyword(m.Text);
-        if (hasKeyword)
+        if (MessageTransform.FirstKeywordMatch(m.Text, config.KeywordRules) is { } kw)
         {
-            // Marker + whole-line tint so the critical word is catchable without
-            // parsing the sentence. Word-level inline color is a later refinement
-            // (hard to combine with wrapping). (Plan §8b)
-            ImGui.TextColored(config.KeywordColor, "▸"); // ▸
+            // Marker + whole-line tint in the matched keyword's own color, so
+            // the highlight says which mechanic it is before the word is read.
+            // Word-level inline color is a later refinement (hard to combine
+            // with wrapping). (Plan §8b)
+            ImGui.TextColored(kw.Color, "▸"); // ▸
             ImGui.SameLine();
-            PushWrappedColored(config.KeywordColor, m.Text);
+            PushWrappedColored(kw.Color, m.Text);
         }
         else
         {
@@ -286,18 +305,6 @@ public sealed class RelayWindow : Window, IDisposable
             return assigned;
 
         return ColorUtil.HashColor(speaker);
-    }
-
-    private bool ContainsKeyword(string text)
-    {
-        foreach (var kw in config.Keywords)
-        {
-            if (!string.IsNullOrWhiteSpace(kw)
-                && text.Contains(kw, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
     }
 
     private bool IsDisconnected()
