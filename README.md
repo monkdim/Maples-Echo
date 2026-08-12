@@ -122,6 +122,22 @@ to attach to a GitHub Release. Bump both the `<Version>`/`<AssemblyVersion>` in
 `MaplesEcho/MaplesEcho.csproj` **and** the `AssemblyVersion` in
 `repo/pluginmaster.json` on every release, or updates won't be offered.
 
+### Test builds
+
+The repo carries a **testing channel** alongside stable: `repo/testing.zip` +
+`TestingAssemblyVersion` in `repo/pluginmaster.json`. Testers opt in per plugin
+(right-click Maple's Echo in `/xlplugins` → **Receive plugin testing versions**;
+enable testing builds under `/xlsettings` → Experimental if the option isn't
+shown) and get the testing build; everyone else stays on stable. To cut a test
+build: bump the csproj version, `dotnet build -c Release`, copy `latest.zip` to
+`repo/testing.zip`, and set `TestingAssemblyVersion` to match. Promoting to
+stable is then just replacing `repo/latest.zip` and `AssemblyVersion` with the
+same bits.
+
+For rapid local iteration, skip packaging entirely: add the build output folder
+(`MaplesEcho/bin/Release/MaplesEcho/`) as a **Dev Plugin Location** under
+`/xlsettings` → Experimental.
+
 ---
 
 ## A note on latency
