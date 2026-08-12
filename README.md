@@ -97,6 +97,7 @@ entered at runtime — never in a file or this repository. Dalamud stores it
 
 - `/mapleecho` — toggle the relay window.
 - `/mapleecho config` — open settings.
+- `/mapleecho clear` — clear the relayed messages (e.g. between pulls).
 
 ---
 

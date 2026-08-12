@@ -21,17 +21,28 @@ public sealed class RelayWindow : Window, IDisposable
     private readonly Configuration config;
     private readonly MessageStore store;
     private readonly DiscordRelayService discord;
+    private readonly Action save;
 
     private bool stickToBottom = true;
 
-    public RelayWindow(Configuration config, MessageStore store, DiscordRelayService discord)
+    // New-message pulse state: which message id last triggered a flash, when,
+    // and whether it was a keyword hit (stronger, longer, keyword-colored).
+    private ulong lastPulsedId;
+    private double pulseStart = double.NegativeInfinity;
+    private bool pulseIsKeyword;
+
+    private const float PulseSeconds = 0.4f;
+    private const float KeywordPulseSeconds = 0.9f;
+
+    public RelayWindow(Configuration config, MessageStore store, DiscordRelayService discord, Action save)
         : base("Maple's Echo##MaplesEchoRelay")
     {
         this.config = config;
         this.store = store;
         this.discord = discord;
+        this.save = save;
 
-        IsOpen = true;
+        IsOpen = config.RelayWindowOpen;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(220, 120),
@@ -39,6 +50,26 @@ public sealed class RelayWindow : Window, IDisposable
         };
         Size = new Vector2(420, 300);
         SizeCondition = ImGuiCond.FirstUseEver;
+    }
+
+    // Persist open/closed across sessions so a deliberate close sticks. OnOpen/
+    // OnClose fire on every path — command toggle, title-bar X, server tab.
+    public override void OnOpen()
+    {
+        if (!config.RelayWindowOpen)
+        {
+            config.RelayWindowOpen = true;
+            save();
+        }
+    }
+
+    public override void OnClose()
+    {
+        if (config.RelayWindowOpen)
+        {
+            config.RelayWindowOpen = false;
+            save();
+        }
     }
 
     public override void PreDraw()
@@ -51,6 +82,11 @@ public sealed class RelayWindow : Window, IDisposable
             flags |= ImGuiWindowFlags.NoTitleBar;
         if (config.LockWindowPosition)
             flags |= ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize;
+        // Click-through: the window ignores the mouse entirely so clicks and
+        // camera drags pass to the game. Escape hatch is the settings window,
+        // which never gets this flag.
+        if (config.ClickThrough)
+            flags |= ImGuiWindowFlags.NoInputs;
         Flags = flags;
 
         // Background + opacity. On disconnect, tint the background red so the
@@ -58,8 +94,51 @@ public sealed class RelayWindow : Window, IDisposable
         var bg = config.WindowBackgroundColor;
         var opacity = Math.Clamp(config.BackgroundOpacity, 0f, 1f);
         if (IsDisconnected())
+        {
             bg = new Vector4(0.28f, 0.06f, 0.07f, 1f); // dark red alarm tint
+        }
+        else
+        {
+            TrackNewestForPulse();
+            bg = ApplyPulse(bg);
+        }
+
         ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(bg.X, bg.Y, bg.Z, opacity));
+    }
+
+    /// <summary>Arm the pulse when a new message lands. Runs even with the flash
+    /// disabled so enabling it later can't retro-flash an old message. In-place
+    /// edits keep their id and so never re-pulse.</summary>
+    private void TrackNewestForPulse()
+    {
+        if (store.Newest() is not { } newest || newest.SourceMessageId == lastPulsedId)
+            return;
+
+        lastPulsedId = newest.SourceMessageId;
+        pulseStart = ImGui.GetTime();
+        pulseIsKeyword = ContainsKeyword(newest.Text);
+    }
+
+    /// <summary>
+    /// The visual stand-in for hearing someone start talking: blend the window
+    /// background toward a flash color for a beat after each arrival, fading out.
+    /// Keyword hits flash stronger and longer, in the keyword color, so the
+    /// pulse itself says "this one matters" from peripheral vision. (Plan §7)
+    /// </summary>
+    private Vector4 ApplyPulse(Vector4 bg)
+    {
+        if (!config.FlashOnNewMessage)
+            return bg;
+
+        var duration = pulseIsKeyword ? KeywordPulseSeconds : PulseSeconds;
+        var elapsed = (float)(ImGui.GetTime() - pulseStart);
+        if (elapsed < 0f || elapsed >= duration)
+            return bg;
+
+        var intensity = 1f - elapsed / duration;
+        var flash = pulseIsKeyword ? config.KeywordColor : new Vector4(1f, 1f, 1f, 1f);
+        var strength = pulseIsKeyword ? 0.45f : 0.25f;
+        return Vector4.Lerp(bg, flash, intensity * strength);
     }
 
     public override void PostDraw()
@@ -102,7 +181,16 @@ public sealed class RelayWindow : Window, IDisposable
             ImGui.SameLine();
             ImGui.TextColored(config.TimestampColor, $"  (last message {FormatAge(age)} ago)");
         }
+
+        // Right-aligned Clear, for wiping last pull's callouts between pulls.
+        // Unreachable in click-through mode by design; /mapleecho clear remains.
+        var clearWidth = ImGui.CalcTextSize("Clear").X + ImGui.GetStyle().FramePadding.X * 2f;
+        ImGui.SameLine(MathF.Max(0f, ImGui.GetContentRegionMax().X - clearWidth));
+        if (ImGui.SmallButton("Clear"))
+            store.Clear();
     }
+
+    private string TimeFormat => config.Use24HourTime ? "HH:mm" : "h:mm tt";
 
     private void DrawMessages()
     {
@@ -155,12 +243,12 @@ public sealed class RelayWindow : Window, IDisposable
             if (config.ShowTimestamps)
             {
                 ImGui.SameLine();
-                ImGui.TextColored(config.TimestampColor, $"  {m.ReceivedAt:h:mm tt}");
+                ImGui.TextColored(config.TimestampColor, $"  {m.ReceivedAt.ToString(TimeFormat)}");
             }
         }
         else if (config.ShowTimestamps)
         {
-            ImGui.TextColored(config.TimestampColor, $"{m.ReceivedAt:h:mm tt}");
+            ImGui.TextColored(config.TimestampColor, m.ReceivedAt.ToString(TimeFormat));
         }
     }
 

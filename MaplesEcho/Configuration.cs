@@ -89,13 +89,29 @@ public class Configuration : IPluginConfiguration
     // ----- Behavior ------------------------------------------------------
     public bool ShowTimestamps { get; set; } = true;
 
+    public bool Use24HourTime { get; set; } = false;
+
     public bool AutoScroll { get; set; } = true;
+
+    /// <summary>Briefly flash the window background when a message arrives —
+    /// the visual stand-in for hearing someone start talking. Keyword hits
+    /// flash stronger, in the keyword color.</summary>
+    public bool FlashOnNewMessage { get; set; } = true;
 
     public int MaxMessages { get; set; } = 200;
 
     public bool LockWindowPosition { get; set; } = false;
 
+    /// <summary>Window ignores the mouse entirely — clicks and camera drags pass
+    /// through to the game. Turned off from the settings window (which is never
+    /// click-through) when the window needs to be moved or scrolled.</summary>
+    public bool ClickThrough { get; set; } = false;
+
     public bool HideDuringCutscenes { get; set; } = true;
+
+    /// <summary>Whether the relay window was open last session, so a deliberate
+    /// close survives a relog instead of the window force-opening every launch.</summary>
+    public bool RelayWindowOpen { get; set; } = true;
 
     /// <summary>Secondary fallback: also mirror into the native game chat log
     /// via IChatGui.Print(). Off by default. (Plan §2)</summary>

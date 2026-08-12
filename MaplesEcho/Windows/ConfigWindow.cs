@@ -174,7 +174,9 @@ public sealed class ConfigWindow : Window, IDisposable
 
         CheckSave("Show speaker names", () => config.ShowSpeakerName, v => config.ShowSpeakerName = v);
         CheckSave("Show timestamps", () => config.ShowTimestamps, v => config.ShowTimestamps = v);
+        CheckSave("24-hour timestamps", () => config.Use24HourTime, v => config.Use24HourTime = v);
         CheckSave("Auto-scroll to newest", () => config.AutoScroll, v => config.AutoScroll = v);
+        CheckSave("Flash background on new message (stronger on keyword hits)", () => config.FlashOnNewMessage, v => config.FlashOnNewMessage = v);
         CheckSave("Merge consecutive from same speaker", () => config.MergeConsecutive, v => config.MergeConsecutive = v);
 
         var mergeWindow = config.MergeWindowSeconds;
@@ -195,6 +197,7 @@ public sealed class ConfigWindow : Window, IDisposable
 
         CheckSave("Hide title bar (prevents focus theft mid-fight)", () => config.HideTitleBar, v => config.HideTitleBar = v);
         CheckSave("Lock window position", () => config.LockWindowPosition, v => config.LockWindowPosition = v);
+        CheckSave("Click-through — window ignores the mouse (uncheck here to move or scroll it)", () => config.ClickThrough, v => config.ClickThrough = v);
         CheckSave("Hide during cutscenes", () => config.HideDuringCutscenes, v => config.HideDuringCutscenes = v);
         CheckSave("Also mirror to game chat log", () => config.AlsoPrintToGameChat, v => config.AlsoPrintToGameChat = v);
     }
@@ -209,11 +212,24 @@ public sealed class ConfigWindow : Window, IDisposable
 
         foreach (var speaker in config.KnownSpeakers.ToArray())
         {
+            ImGui.PushID(speaker);
             var color = config.SpeakerColors.TryGetValue(speaker, out var c) ? c : ColorUtil.HashColor(speaker);
             if (ImGui.ColorEdit4($"{speaker}##spk", ref color, ImGuiColorEditFlags.NoInputs))
             {
                 config.SpeakerColors[speaker] = color;
                 save();
+            }
+
+            // Forget a stale name (bot renames, one-time guests). A speaker
+            // still active in the channel simply reappears on their next line.
+            ImGui.SameLine();
+            if (ImGui.SmallButton("X"))
+            {
+                config.KnownSpeakers.Remove(speaker);
+                config.SpeakerColors.Remove(speaker);
+                save();
+                ImGui.PopID();
+                continue;
             }
 
             var contrast = ColorUtil.ContrastRatio(color, config.WindowBackgroundColor);
@@ -222,6 +238,8 @@ public sealed class ConfigWindow : Window, IDisposable
                 ImGui.SameLine();
                 ImGui.TextColored(new Vector4(0.95f, 0.6f, 0.2f, 1f), $"low contrast ({contrast:0.0}:1)");
             }
+
+            ImGui.PopID();
         }
 
         ImGui.Separator();

@@ -86,10 +86,14 @@ public static class ConfigBlob
         to.Keywords = from.Keywords ?? new();
 
         to.ShowTimestamps = from.ShowTimestamps;
+        to.Use24HourTime = from.Use24HourTime;
         to.AutoScroll = from.AutoScroll;
+        to.FlashOnNewMessage = from.FlashOnNewMessage;
         to.MaxMessages = from.MaxMessages;
         to.LockWindowPosition = from.LockWindowPosition;
+        to.ClickThrough = from.ClickThrough;
         to.HideDuringCutscenes = from.HideDuringCutscenes;
+        to.RelayWindowOpen = from.RelayWindowOpen;
         to.AlsoPrintToGameChat = from.AlsoPrintToGameChat;
         to.HideTitleBar = from.HideTitleBar;
     }
