@@ -21,17 +21,35 @@ public sealed class RelayWindow : Window, IDisposable
     private readonly Configuration config;
     private readonly MessageStore store;
     private readonly DiscordRelayService discord;
+    private readonly Func<bool> inCombat;
+    private readonly Action save;
 
     private bool stickToBottom = true;
 
-    public RelayWindow(Configuration config, MessageStore store, DiscordRelayService discord)
+    // "N new messages ↓" pill state: the newest id that was on screen while at
+    // the bottom, and a one-shot jump requested by clicking the pill.
+    private ulong lastSeenAtBottomId;
+    private bool jumpToBottom;
+
+    // New-message pulse state: which message id last triggered a flash, when,
+    // and the matched keyword's color (null = plain white arrival pulse).
+    private ulong lastPulsedId;
+    private double pulseStart = double.NegativeInfinity;
+    private Vector4? pulseKeywordColor;
+
+    private const float PulseSeconds = 0.4f;
+    private const float KeywordPulseSeconds = 0.9f;
+
+    public RelayWindow(Configuration config, MessageStore store, DiscordRelayService discord, Func<bool> inCombat, Action save)
         : base("Maple's Echo##MaplesEchoRelay")
     {
         this.config = config;
         this.store = store;
         this.discord = discord;
+        this.inCombat = inCombat;
+        this.save = save;
 
-        IsOpen = true;
+        IsOpen = config.RelayWindowOpen;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(220, 120),
@@ -41,16 +59,43 @@ public sealed class RelayWindow : Window, IDisposable
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
+    // Persist open/closed across sessions so a deliberate close sticks. OnOpen/
+    // OnClose fire on every path — command toggle, title-bar X, server tab.
+    public override void OnOpen()
+    {
+        if (!config.RelayWindowOpen)
+        {
+            config.RelayWindowOpen = true;
+            save();
+        }
+    }
+
+    public override void OnClose()
+    {
+        if (config.RelayWindowOpen)
+        {
+            config.RelayWindowOpen = false;
+            save();
+        }
+    }
+
     public override void PreDraw()
     {
         // Window behavior flags, recomputed each frame from config. Resizable is
         // intentional (never NoResize). NoFocusOnAppearing so a message arriving
         // mid-mechanic can never steal keyboard input — that is a wipe. (Plan §7)
-        var flags = ImGuiWindowFlags.NoFocusOnAppearing;
+        // NoScrollbar on the parent: the message child owns all scrolling, so a
+        // parent scrollbar could only ever appear as a layout glitch.
+        var flags = ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoScrollbar;
         if (config.HideTitleBar)
             flags |= ImGuiWindowFlags.NoTitleBar;
         if (config.LockWindowPosition)
             flags |= ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize;
+        // Click-through: the window ignores the mouse entirely so clicks and
+        // camera drags pass to the game. Escape hatch is the settings window,
+        // which never gets this flag.
+        if (config.ClickThrough)
+            flags |= ImGuiWindowFlags.NoInputs;
         Flags = flags;
 
         // Background + opacity. On disconnect, tint the background red so the
@@ -58,9 +103,60 @@ public sealed class RelayWindow : Window, IDisposable
         var bg = config.WindowBackgroundColor;
         var opacity = Math.Clamp(config.BackgroundOpacity, 0f, 1f);
         if (IsDisconnected())
+        {
             bg = new Vector4(0.28f, 0.06f, 0.07f, 1f); // dark red alarm tint
+        }
+        else
+        {
+            TrackNewestForPulse();
+            bg = ApplyPulse(bg);
+        }
+
         ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(bg.X, bg.Y, bg.Z, opacity));
     }
+
+    /// <summary>Arm the pulse when a new message lands. Runs even with the flash
+    /// disabled so enabling it later can't retro-flash an old message. In-place
+    /// edits keep their id and so never re-pulse.</summary>
+    private void TrackNewestForPulse()
+    {
+        if (store.Newest() is not { } newest || newest.SourceMessageId == lastPulsedId)
+            return;
+
+        lastPulsedId = newest.SourceMessageId;
+        pulseStart = ImGui.GetTime();
+        pulseKeywordColor = MessageTransform.FirstKeywordMatch(newest.Text, config.KeywordRules)?.Color;
+    }
+
+    /// <summary>
+    /// The visual stand-in for hearing someone start talking: blend the window
+    /// background toward a flash color for a beat after each arrival, fading out.
+    /// Keyword hits flash stronger and longer, in that keyword's own color, so
+    /// the pulse itself says which callout it is from peripheral vision. (Plan §7)
+    /// </summary>
+    private Vector4 ApplyPulse(Vector4 bg)
+    {
+        if (!config.FlashOnNewMessage)
+            return bg;
+
+        var isKeyword = pulseKeywordColor.HasValue;
+        var duration = isKeyword ? KeywordPulseSeconds : PulseSeconds;
+        var elapsed = (float)(ImGui.GetTime() - pulseStart);
+        if (elapsed < 0f || elapsed >= duration)
+            return bg;
+
+        var intensity = 1f - elapsed / duration;
+        var flash = pulseKeywordColor ?? new Vector4(1f, 1f, 1f, 1f);
+        var strength = isKeyword ? 0.45f : 0.25f;
+        return Vector4.Lerp(bg, flash, intensity * strength);
+    }
+
+    // ----- Combat mode: effective values while InCombat --------------------
+    private bool CombatActive => config.CombatModeEnabled && inCombat();
+
+    private float EffectiveFontSize => CombatActive ? config.CombatFontSize : config.FontSize;
+
+    private bool TimestampsVisible => config.ShowTimestamps && !(CombatActive && config.CombatHideTimestamps);
 
     public override void PostDraw()
     {
@@ -69,10 +165,12 @@ public sealed class RelayWindow : Window, IDisposable
 
     public override void Draw()
     {
+        HandleFontZoom();
+
         // Live font sizing without an atlas rebuild. Crisp custom-font sizing via
         // ManagedFontAtlas is a later refinement; scale gets the accessibility
         // win (readable size) now, safely. (Plan §7 — "ship size + colors first")
-        ImGui.SetWindowFontScale(Math.Max(0.5f, config.FontSize / FontScaleBaseline));
+        ImGui.SetWindowFontScale(Math.Max(0.5f, EffectiveFontSize / FontScaleBaseline));
 
         DrawStatusBar();
         ImGui.Separator();
@@ -102,7 +200,16 @@ public sealed class RelayWindow : Window, IDisposable
             ImGui.SameLine();
             ImGui.TextColored(config.TimestampColor, $"  (last message {FormatAge(age)} ago)");
         }
+
+        // Right-aligned Clear, for wiping last pull's callouts between pulls.
+        // Unreachable in click-through mode by design; /mapleecho clear remains.
+        var clearWidth = ImGui.CalcTextSize("Clear").X + ImGui.GetStyle().FramePadding.X * 2f;
+        ImGui.SameLine(MathF.Max(0f, ImGui.GetContentRegionMax().X - clearWidth));
+        if (ImGui.SmallButton("Clear"))
+            store.Clear();
     }
+
+    private string TimeFormat => config.Use24HourTime ? "HH:mm" : "h:mm tt";
 
     private void DrawMessages()
     {
@@ -113,13 +220,22 @@ public sealed class RelayWindow : Window, IDisposable
         }
 
         var messages = store.Snapshot();
-        var extraSpacing = MathF.Max(0f, (config.LineSpacing - 1f) * config.FontSize);
+        var extraSpacing = MathF.Max(0f, (config.LineSpacing - 1f) * EffectiveFontSize);
+
+        // In combat, optionally show only the freshest callouts — last fight's
+        // lines are noise exactly when reading time is scarcest.
+        var cutoff = CombatActive && config.CombatRecentSeconds > 0
+            ? DateTime.Now - TimeSpan.FromSeconds(config.CombatRecentSeconds)
+            : DateTime.MinValue;
 
         string? lastSpeaker = null;
         DateTime lastTime = DateTime.MinValue;
 
         foreach (var m in messages)
         {
+            if (m.ReceivedAt < cutoff)
+                continue;
+
             var mergeable = config.MergeConsecutive
                             && lastSpeaker == m.Speaker
                             && (m.ReceivedAt - lastTime).TotalSeconds <= config.MergeWindowSeconds;
@@ -138,12 +254,76 @@ public sealed class RelayWindow : Window, IDisposable
         }
 
         // Auto-scroll: stick to the bottom only while the user is already there.
-        // Manual scroll-up pauses; scrolling back to the bottom resumes. (Plan §7)
-        if (config.AutoScroll && stickToBottom)
+        // Manual scroll-up pauses; scrolling back to the bottom resumes — or the
+        // pill click forces one jump regardless of the auto-scroll setting. (Plan §7)
+        if ((config.AutoScroll && stickToBottom) || jumpToBottom)
+        {
             ImGui.SetScrollHereY(1f);
+            jumpToBottom = false;
+        }
+
         stickToBottom = ImGui.GetScrollY() >= ImGui.GetScrollMaxY() - 1f;
+        if (stickToBottom && messages.Count > 0)
+            lastSeenAtBottomId = messages[^1].SourceMessageId;
 
         ImGui.EndChild();
+
+        DrawNewMessagesPill(messages);
+    }
+
+    /// <summary>
+    /// Floating "N new messages ↓" pill over the bottom of the log while
+    /// scrolled up and callouts are arriving below — the paused state must
+    /// never read as silence. Click jumps to the newest. In click-through mode
+    /// it's informative only (visible, not clickable). (Plan §7)
+    /// </summary>
+    private void DrawNewMessagesPill(IReadOnlyList<RelayMessage> messages)
+    {
+        if (stickToBottom)
+            return;
+
+        var unseen = 0;
+        for (var i = messages.Count - 1; i >= 0; i--)
+        {
+            if (messages[i].SourceMessageId == lastSeenAtBottomId)
+                break;
+            unseen++;
+        }
+
+        if (unseen == 0)
+            return;
+
+        // The just-ended messages child is the last item; center over its bottom.
+        var min = ImGui.GetItemRectMin();
+        var max = ImGui.GetItemRectMax();
+        var label = unseen == 1 ? "1 new message ↓" : $"{unseen} new messages ↓";
+        var size = ImGui.CalcTextSize(label);
+        var pos = new Vector2(min.X + (max.X - min.X - size.X) * 0.5f, max.Y - size.Y - 10f);
+        ImGui.SetCursorScreenPos(pos);
+        if (ImGui.SmallButton(label))
+            jumpToBottom = true;
+    }
+
+    /// <summary>
+    /// Ctrl+scroll over the window resizes the text — the fastest possible
+    /// "I can't read this right now" recovery, no settings trip. Adjusts the
+    /// combat size while the combat profile is active, the normal size
+    /// otherwise, and persists like the sliders do.
+    /// </summary>
+    private void HandleFontZoom()
+    {
+        var io = ImGui.GetIO();
+        if (!io.KeyCtrl || io.MouseWheel == 0f || !ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows))
+            return;
+
+        var delta = io.MouseWheel;
+        if (CombatActive)
+            config.CombatFontSize = Math.Clamp(config.CombatFontSize + delta, 10f, 48f);
+        else
+            config.FontSize = Math.Clamp(config.FontSize + delta, 10f, 48f);
+        save();
+
+        io.MouseWheel = 0f; // consumed — don't also scroll the log
     }
 
     private void DrawHeader(RelayMessage m)
@@ -152,29 +332,29 @@ public sealed class RelayWindow : Window, IDisposable
         {
             var color = SpeakerColor(m.Speaker);
             ImGui.TextColored(color, m.Speaker);
-            if (config.ShowTimestamps)
+            if (TimestampsVisible)
             {
                 ImGui.SameLine();
-                ImGui.TextColored(config.TimestampColor, $"  {m.ReceivedAt:h:mm tt}");
+                ImGui.TextColored(config.TimestampColor, $"  {m.ReceivedAt.ToString(TimeFormat)}");
             }
         }
-        else if (config.ShowTimestamps)
+        else if (TimestampsVisible)
         {
-            ImGui.TextColored(config.TimestampColor, $"{m.ReceivedAt:h:mm tt}");
+            ImGui.TextColored(config.TimestampColor, m.ReceivedAt.ToString(TimeFormat));
         }
     }
 
     private void DrawBody(RelayMessage m)
     {
-        var hasKeyword = ContainsKeyword(m.Text);
-        if (hasKeyword)
+        if (MessageTransform.FirstKeywordMatch(m.Text, config.KeywordRules) is { } kw)
         {
-            // Marker + whole-line tint so the critical word is catchable without
-            // parsing the sentence. Word-level inline color is a later refinement
-            // (hard to combine with wrapping). (Plan §8b)
-            ImGui.TextColored(config.KeywordColor, "▸"); // ▸
+            // Marker + whole-line tint in the matched keyword's own color, so
+            // the highlight says which mechanic it is before the word is read.
+            // Word-level inline color is a later refinement (hard to combine
+            // with wrapping). (Plan §8b)
+            ImGui.TextColored(kw.Color, "▸"); // ▸
             ImGui.SameLine();
-            PushWrappedColored(config.KeywordColor, m.Text);
+            PushWrappedColored(kw.Color, m.Text);
         }
         else
         {
@@ -198,18 +378,6 @@ public sealed class RelayWindow : Window, IDisposable
             return assigned;
 
         return ColorUtil.HashColor(speaker);
-    }
-
-    private bool ContainsKeyword(string text)
-    {
-        foreach (var kw in config.Keywords)
-        {
-            if (!string.IsNullOrWhiteSpace(kw)
-                && text.Contains(kw, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
     }
 
     private bool IsDisconnected()

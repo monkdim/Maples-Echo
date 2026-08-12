@@ -60,8 +60,9 @@ entered at runtime — never in a file or this repository. Dalamud stores it
 
 - Don't share your Dalamud config files.
 - Don't screenshot the Settings → Connection panel with the token revealed.
-- The config **export/backup blob contains the token** — treat that string as a
-  secret and never paste it anywhere public.
+- The config export is **token-free by default** and safe to share as a
+  settings pack. If you tick **Include bot token** when exporting, treat that
+  string as a secret and never paste it anywhere public.
 
 ---
 
@@ -97,6 +98,7 @@ entered at runtime — never in a file or this repository. Dalamud stores it
 
 - `/mapleecho` — toggle the relay window.
 - `/mapleecho config` — open settings.
+- `/mapleecho clear` — clear the relayed messages (e.g. between pulls).
 
 ---
 
@@ -119,6 +121,22 @@ The Release build produces `MaplesEcho/bin/Release/MaplesEcho/latest.zip`, ready
 to attach to a GitHub Release. Bump both the `<Version>`/`<AssemblyVersion>` in
 `MaplesEcho/MaplesEcho.csproj` **and** the `AssemblyVersion` in
 `repo/pluginmaster.json` on every release, or updates won't be offered.
+
+### Test builds
+
+The repo carries a **testing channel** alongside stable: `repo/testing.zip` +
+`TestingAssemblyVersion` in `repo/pluginmaster.json`. Testers opt in per plugin
+(right-click Maple's Echo in `/xlplugins` → **Receive plugin testing versions**;
+enable testing builds under `/xlsettings` → Experimental if the option isn't
+shown) and get the testing build; everyone else stays on stable. To cut a test
+build: bump the csproj version, `dotnet build -c Release`, copy `latest.zip` to
+`repo/testing.zip`, and set `TestingAssemblyVersion` to match. Promoting to
+stable is then just replacing `repo/latest.zip` and `AssemblyVersion` with the
+same bits.
+
+For rapid local iteration, skip packaging entirely: add the build output folder
+(`MaplesEcho/bin/Release/MaplesEcho/`) as a **Dev Plugin Location** under
+`/xlsettings` → Experimental.
 
 ---
 

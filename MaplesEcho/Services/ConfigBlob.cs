@@ -20,9 +20,19 @@ public static class ConfigBlob
         WriteIndented = false,
     };
 
-    public static string Export(Configuration config)
+    /// <summary>
+    /// Export as one string. Token-free by default so the blob is safe to share
+    /// as a settings pack; the token rides along only on explicit request.
+    /// Serializes a copy — the live config is never touched.
+    /// </summary>
+    public static string Export(Configuration config, bool includeToken = false)
     {
-        var json = JsonSerializer.Serialize(config, Options);
+        var copy = new Configuration();
+        CopyInto(config, copy);
+        if (!includeToken)
+            copy.BotToken = string.Empty;
+
+        var json = JsonSerializer.Serialize(copy, Options);
         var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
         return Prefix + b64;
     }
@@ -47,7 +57,16 @@ public static class ConfigBlob
             if (parsed is null)
                 return false;
 
+            // A token-free blob must not wipe a working token — importing a
+            // shared settings pack keeps the connection you already have.
+            var previousToken = target.BotToken;
             CopyInto(parsed, target);
+            if (string.IsNullOrWhiteSpace(target.BotToken))
+                target.BotToken = previousToken;
+
+            // A blob exported by a pre-KeywordRules build carries plain-string
+            // keywords; upgrade them the same way loading an old config does.
+            target.MigrateLegacyKeywords();
             return true;
         }
         catch (Exception)
@@ -73,7 +92,6 @@ public static class ConfigBlob
         to.BackgroundOpacity = from.BackgroundOpacity;
 
         to.FontSize = from.FontSize;
-        to.FontFace = from.FontFace;
         to.LineSpacing = from.LineSpacing;
 
         to.ShowSpeakerName = from.ShowSpeakerName;
@@ -84,13 +102,23 @@ public static class ConfigBlob
         to.MergeWindowSeconds = from.MergeWindowSeconds;
 
         to.Glossary = from.Glossary ?? new();
+        to.KeywordRules = from.KeywordRules ?? new();
         to.Keywords = from.Keywords ?? new();
 
+        to.CombatModeEnabled = from.CombatModeEnabled;
+        to.CombatFontSize = from.CombatFontSize;
+        to.CombatHideTimestamps = from.CombatHideTimestamps;
+        to.CombatRecentSeconds = from.CombatRecentSeconds;
+
         to.ShowTimestamps = from.ShowTimestamps;
+        to.Use24HourTime = from.Use24HourTime;
         to.AutoScroll = from.AutoScroll;
+        to.FlashOnNewMessage = from.FlashOnNewMessage;
         to.MaxMessages = from.MaxMessages;
         to.LockWindowPosition = from.LockWindowPosition;
+        to.ClickThrough = from.ClickThrough;
         to.HideDuringCutscenes = from.HideDuringCutscenes;
+        to.RelayWindowOpen = from.RelayWindowOpen;
         to.AlsoPrintToGameChat = from.AlsoPrintToGameChat;
         to.HideTitleBar = from.HideTitleBar;
     }

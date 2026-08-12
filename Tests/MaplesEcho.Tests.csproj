@@ -21,8 +21,11 @@
   -->
   <ItemGroup>
     <Compile Include="..\MaplesEcho\GlossaryRule.cs" Link="Linked\GlossaryRule.cs" />
+    <Compile Include="..\MaplesEcho\KeywordRule.cs" Link="Linked\KeywordRule.cs" />
     <Compile Include="..\MaplesEcho\Services\MessageTransform.cs" Link="Linked\MessageTransform.cs" />
     <Compile Include="..\MaplesEcho\Services\ColorUtil.cs" Link="Linked\ColorUtil.cs" />
+    <Compile Include="..\MaplesEcho\Services\MessageStore.cs" Link="Linked\MessageStore.cs" />
+    <Compile Include="..\MaplesEcho\Services\RelayMessage.cs" Link="Linked\RelayMessage.cs" />
   </ItemGroup>
 
 </Project>
