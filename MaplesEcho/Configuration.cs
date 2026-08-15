@@ -144,6 +144,14 @@ public class Configuration : IPluginConfiguration
     /// flash stronger, in the keyword color.</summary>
     public bool FlashOnNewMessage { get; set; } = true;
 
+    /// <summary>Play a chat sound effect when a keyword message arrives. For
+    /// hearing users who can't run Discord audio; off by default — the primary
+    /// user may not hear it at all.</summary>
+    public bool PlaySoundOnKeyword { get; set; } = false;
+
+    /// <summary>Which chat sound to play: the game's &lt;se.1&gt;–&lt;se.16&gt;.</summary>
+    public int KeywordSoundId { get; set; } = 6;
+
     public int MaxMessages { get; set; } = 200;
 
     public bool LockWindowPosition { get; set; } = false;

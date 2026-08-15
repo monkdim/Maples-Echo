@@ -114,6 +114,8 @@ public static class ConfigBlob
         to.Use24HourTime = from.Use24HourTime;
         to.AutoScroll = from.AutoScroll;
         to.FlashOnNewMessage = from.FlashOnNewMessage;
+        to.PlaySoundOnKeyword = from.PlaySoundOnKeyword;
+        to.KeywordSoundId = from.KeywordSoundId;
         to.MaxMessages = from.MaxMessages;
         to.LockWindowPosition = from.LockWindowPosition;
         to.ClickThrough = from.ClickThrough;

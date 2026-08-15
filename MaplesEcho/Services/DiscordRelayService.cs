@@ -38,9 +38,10 @@ public sealed class DiscordRelayService : IDisposable
     /// <summary>Called (on the framework thread) with each speaker name seen.</summary>
     public Action<string>? OnSpeakerSeen { get; set; }
 
-    /// <summary>Called (on the framework thread) with each stored message, for
-    /// the optional native-chat mirror.</summary>
-    public Action<RelayMessage>? OnMirrorToGameChat { get; set; }
+    /// <summary>Called (on the framework thread) with each newly stored message —
+    /// the optional native-chat mirror and keyword sound hang off this. In-place
+    /// edits do not re-fire it, so corrections never re-ping.</summary>
+    public Action<RelayMessage>? OnMessageRelayed { get; set; }
 
     // --- Status, read from the draw thread ---
     public RelayState State { get; private set; } = RelayState.Disconnected;
@@ -224,7 +225,7 @@ public sealed class DiscordRelayService : IDisposable
             if (State != RelayState.Connected)
                 SetState(RelayState.Connected, "Connected.");
             OnSpeakerSeen?.Invoke(relay.Speaker);
-            OnMirrorToGameChat?.Invoke(relay);
+            OnMessageRelayed?.Invoke(relay);
         });
     }
 

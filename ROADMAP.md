@@ -23,14 +23,20 @@ settings that silently revert.
   timestamps, window open-state persistence.
 - **QoL**: "N new messages ↓" pill when scrolled up, Ctrl+scroll font resize,
   token-free config export by default, FFXIV starter keyword/glossary pack.
+- **Crisp font rendering**: real `IFontAtlas` fonts built at the configured
+  size (one handle per profile, so combat transitions never rebuild; scale
+  fallback while a build is in flight). Needs in-game visual confirmation.
+- **Correction stage 1**: right-click a relayed line → copy, or add a glossary
+  rule prefilled with that text; whole-word and regex options on glossary
+  rules (bad patterns skipped safely, bounded match time).
+- **Keyword sound** (opt-in): chat sound `<se.1>`–`<se.16>` on keyword hits,
+  with an in-game Test button. For hearing users who can't run Discord audio.
 
 ## Next
 
-- **Crisp font rendering** (its own release): replace `SetWindowFontScale`
-  bilinear scaling with a real `IFontAtlas` build at the configured size —
-  large text is currently blurry, and blur is exactly what an accessibility
-  surface can't afford. Font-face selection returns alongside it. Isolated
-  release on purpose: it's the only planned work with real regression risk.
+- **In-game verification pass** of the 0.3.0 test build — the font atlas
+  especially (crisp at 28px+, no hitching on resize, no missing text during
+  async builds).
 
 ## Transcription correction track
 
@@ -38,13 +44,11 @@ Working assumption: **bot-agnostic**. We don't rely on any upstream
 custom-vocabulary feature (Scriptly or otherwise) — other groups will run
 other bots, so correction lives in the plugin.
 
-- **Stage 1 — remove friction from the manual layer**
+- **Stage 1 — remove friction from the manual layer** ✅ shipped
   - Right-click a relayed line → "add glossary rule", pre-filled with that
     text. Corrections happen when the failure is seen, not from memory later.
-  - Whole-word and regex options on glossary rules (whole-word can reuse the
-    keyword matcher).
-  - Shareable correction packs — the token-free export (shipped) makes a
-    group's accumulated glossary safe to hand to the next group.
+  - Whole-word and regex options on glossary rules.
+  - Shareable correction packs via the token-free export.
 
 - **Stage 2 — phonetic auto-correction**
   - FFXIV vocabulary (ability/callout terms + user's custom words); incoming
@@ -63,9 +67,7 @@ other bots, so correction lives in the plugin.
 
 ## Later / maybe
 
-- Optional sound cue on keyword hits — for hearing users who just can't run
-  Discord audio. Needs the game sound-effect id mapping verified in-game
-  first; off by default regardless.
+- Font-face selection (the atlas infrastructure now exists to support it).
 - Word-level inline keyword coloring (hard to combine with text wrapping;
   whole-line tint covers most of the value).
 

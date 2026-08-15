@@ -77,13 +77,42 @@ public static class MessageTransform
             if (!rule.Enabled || string.IsNullOrEmpty(rule.Find))
                 continue;
 
+            if (rule.IsRegex)
+            {
+                s = ApplyRegexRule(s, rule);
+                continue;
+            }
+
             var comparison = rule.CaseSensitive
                 ? StringComparison.Ordinal
                 : StringComparison.OrdinalIgnoreCase;
-            s = ReplaceAll(s, rule.Find, rule.Replace ?? string.Empty, comparison);
+            s = ReplaceAll(s, rule.Find, rule.Replace ?? string.Empty, comparison, rule.WholeWord);
         }
 
         return s;
+    }
+
+    // Bounded so a pathological pattern can never stall the relay; on timeout
+    // (or an invalid pattern) the rule is skipped and the text passes through.
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(100);
+
+    private static string ApplyRegexRule(string source, GlossaryRule rule)
+    {
+        try
+        {
+            var options = RegexOptions.CultureInvariant;
+            if (!rule.CaseSensitive)
+                options |= RegexOptions.IgnoreCase;
+            return Regex.Replace(source, rule.Find, rule.Replace ?? string.Empty, options, RegexTimeout);
+        }
+        catch (ArgumentException)
+        {
+            return source;
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return source;
+        }
     }
 
     /// <summary>Full body transform: clean markdown, then apply the glossary.</summary>
@@ -144,7 +173,7 @@ public static class MessageTransform
         return false;
     }
 
-    private static string ReplaceAll(string source, string find, string replace, StringComparison comparison)
+    private static string ReplaceAll(string source, string find, string replace, StringComparison comparison, bool wholeWord = false)
     {
         if (string.IsNullOrEmpty(find))
             return source;
@@ -158,6 +187,21 @@ public static class MessageTransform
             {
                 sb.Append(source, index, source.Length - index);
                 break;
+            }
+
+            if (wholeWord)
+            {
+                var beforeOk = next == 0 || !char.IsLetterOrDigit(source[next - 1]);
+                var after = next + find.Length;
+                var afterOk = after >= source.Length || !char.IsLetterOrDigit(source[after]);
+                if (!(beforeOk && afterOk))
+                {
+                    // Not a word boundary — keep the char at the match start and
+                    // continue scanning from just past it.
+                    sb.Append(source, index, next - index + 1);
+                    index = next + 1;
+                    continue;
+                }
             }
 
             sb.Append(source, index, next - index);

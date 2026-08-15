@@ -65,6 +65,40 @@ public class MessageTransformTests
     }
 
     [Fact]
+    public void ApplyGlossary_WholeWordRespectsBoundaries()
+    {
+        var rules = new List<GlossaryRule>
+        {
+            new() { Find = "tank", Replace = "TANK", WholeWord = true, Enabled = true },
+        };
+        // "tanks" must not become "TANKs"; the standalone word is replaced.
+        Assert.Equal("the tanks eat it, TANK swap now",
+            MessageTransform.ApplyGlossary("the tanks eat it, tank swap now", rules));
+    }
+
+    [Fact]
+    public void ApplyGlossary_RegexRuleReplacesWithCaptures()
+    {
+        var rules = new List<GlossaryRule>
+        {
+            new() { Find = @"\bwave (\d+)\b", Replace = "add wave $1", IsRegex = true, Enabled = true },
+        };
+        Assert.Equal("add wave 3 incoming",
+            MessageTransform.ApplyGlossary("Wave 3 incoming", rules));
+    }
+
+    [Fact]
+    public void ApplyGlossary_InvalidRegexIsSkippedSafely()
+    {
+        var rules = new List<GlossaryRule>
+        {
+            new() { Find = "([unclosed", Replace = "x", IsRegex = true, Enabled = true },
+        };
+        // A bad pattern must never eat the callout — text passes through.
+        Assert.Equal("stack now", MessageTransform.ApplyGlossary("stack now", rules));
+    }
+
+    [Fact]
     public void TransformBody_CleansThenAppliesGlossary()
     {
         var rules = new List<GlossaryRule>
