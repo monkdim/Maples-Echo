@@ -34,6 +34,7 @@ public sealed class ConfigWindow : Window, IDisposable
     private string backupNotice = string.Empty;
     private string presetNotice = string.Empty;
     private bool includeTokenInExport;
+    private bool focusGlossaryTab;
 
     public ConfigWindow(Configuration config, DiscordRelayService discord, MessageStore store, Action save)
         : base("Maple's Echo — Settings##MaplesEchoConfig")
@@ -55,6 +56,16 @@ public sealed class ConfigWindow : Window, IDisposable
         webhookIdBuffer = config.SourceWebhookId == 0 ? string.Empty : config.SourceWebhookId.ToString();
     }
 
+    /// <summary>Open the window on the Glossary tab with the find field
+    /// prefilled — the relay window's "add glossary rule from this line".</summary>
+    public void OpenGlossaryPrefilled(string find)
+    {
+        newGlossaryFind = find;
+        newGlossaryReplace = string.Empty;
+        focusGlossaryTab = true;
+        IsOpen = true;
+    }
+
     public override void Draw()
     {
         if (ImGui.BeginTabBar("##mapleTabs"))
@@ -63,7 +74,9 @@ public sealed class ConfigWindow : Window, IDisposable
             if (ImGui.BeginTabItem("Appearance")) { DrawAppearance(); ImGui.EndTabItem(); }
             if (ImGui.BeginTabItem("Combat")) { DrawCombat(); ImGui.EndTabItem(); }
             if (ImGui.BeginTabItem("Speakers")) { DrawSpeakers(); ImGui.EndTabItem(); }
-            if (ImGui.BeginTabItem("Glossary & Keywords")) { DrawGlossary(); ImGui.EndTabItem(); }
+            var glossaryFlags = focusGlossaryTab ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
+            focusGlossaryTab = false;
+            if (ImGui.BeginTabItem("Glossary & Keywords", glossaryFlags)) { DrawGlossary(); ImGui.EndTabItem(); }
             if (ImGui.BeginTabItem("Presets")) { DrawPresets(); ImGui.EndTabItem(); }
             if (ImGui.BeginTabItem("Backup")) { DrawBackup(); ImGui.EndTabItem(); }
             ImGui.EndTabBar();
@@ -284,7 +297,10 @@ public sealed class ConfigWindow : Window, IDisposable
     private void DrawGlossary()
     {
         ImGui.TextWrapped("Glossary rules fix common mistranscriptions (find → replace), applied " +
-                          "before display. Grow the list as the static finds failures.");
+                          "before display. Grow the list as the static finds failures — or right-click " +
+                          "a line in the relay window to start a rule from it. \"word\" replaces only " +
+                          "at word boundaries; \"regex\" treats find as a regular expression " +
+                          "(replace may use $1 captures; bad patterns are skipped safely).");
 
         for (var i = 0; i < config.Glossary.Count; i++)
         {
@@ -294,10 +310,18 @@ public sealed class ConfigWindow : Window, IDisposable
             if (ImGui.Checkbox("##en", ref enabled)) { rule.Enabled = enabled; save(); }
             ImGui.SameLine();
             var find = rule.Find;
+            ImGui.SetNextItemWidth(140);
             if (ImGui.InputText("find", ref find, 100)) { rule.Find = find; save(); }
             ImGui.SameLine();
             var repl = rule.Replace;
+            ImGui.SetNextItemWidth(140);
             if (ImGui.InputText("replace", ref repl, 100)) { rule.Replace = repl; save(); }
+            ImGui.SameLine();
+            var word = rule.WholeWord;
+            if (ImGui.Checkbox("word", ref word)) { rule.WholeWord = word; save(); }
+            ImGui.SameLine();
+            var regex = rule.IsRegex;
+            if (ImGui.Checkbox("regex", ref regex)) { rule.IsRegex = regex; save(); }
             ImGui.SameLine();
             if (ImGui.Button("X")) { config.Glossary.RemoveAt(i); save(); ImGui.PopID(); break; }
             ImGui.PopID();
@@ -347,6 +371,28 @@ public sealed class ConfigWindow : Window, IDisposable
             config.KeywordRules.Add(new KeywordRule { Word = newKeyword.Trim(), Color = config.KeywordColor });
             newKeyword = string.Empty;
             save();
+        }
+
+        ImGui.Separator();
+        ImGui.TextWrapped("Optional audio ping on keyword hits — for hearing users who can't run " +
+                          "Discord audio. The visual pulse stays the primary cue.");
+        CheckSave("Play a chat sound on keyword hits", () => config.PlaySoundOnKeyword, v => config.PlaySoundOnKeyword = v);
+        var soundId = config.KeywordSoundId;
+        ImGui.SetNextItemWidth(160);
+        if (ImGui.SliderInt("Sound <se.N>", ref soundId, 1, 16))
+            config.KeywordSoundId = soundId;
+        SaveOnRelease();
+        ImGui.SameLine();
+        if (ImGui.Button("Test##sound"))
+        {
+            try
+            {
+                FFXIVClientStructs.FFXIV.Client.UI.UIGlobals.PlayChatSoundEffect((uint)Math.Clamp(config.KeywordSoundId, 1, 16));
+            }
+            catch
+            {
+                // Never let a sound test break the settings window.
+            }
         }
     }
 

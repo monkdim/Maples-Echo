@@ -1,6 +1,7 @@
 using System;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
+using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
@@ -30,6 +31,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Configuration config;
     private readonly MessageStore store;
     private readonly DiscordRelayService discord;
+    private readonly IFontAtlas fontAtlas;
 
     private readonly WindowSystem windowSystem = new("MaplesEcho");
     private readonly RelayWindow relayWindow;
@@ -62,11 +64,22 @@ public sealed class Plugin : IDalamudPlugin
         discord = new DiscordRelayService(config, store, framework, log)
         {
             OnSpeakerSeen = RememberSpeaker,
-            OnMirrorToGameChat = MirrorToGameChat,
+            OnMessageRelayed = HandleRelayedMessage,
         };
 
-        relayWindow = new RelayWindow(config, store, discord, () => condition[ConditionFlag.InCombat], Save);
+        // Crisp text at the configured size: the relay window builds real font
+        // handles from this atlas instead of bilinear-scaling the default font.
+        fontAtlas = pluginInterface.UiBuilder.CreateFontAtlas(FontAtlasAutoRebuildMode.Async, true, "MaplesEcho");
+
         configWindow = new ConfigWindow(config, discord, store, Save);
+        relayWindow = new RelayWindow(
+            config,
+            store,
+            discord,
+            fontAtlas,
+            () => condition[ConditionFlag.InCombat],
+            Save,
+            text => configWindow!.OpenGlossaryPrefilled(text));
         windowSystem.AddWindow(relayWindow);
         windowSystem.AddWindow(configWindow);
 
@@ -136,7 +149,14 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    /// <summary>Optional secondary mirror into the native chat log. (Plan §2)</summary>
+    /// <summary>Per stored message, on the framework thread: optional native-chat
+    /// mirror and optional keyword sound. Edits don't re-fire this. (Plan §2)</summary>
+    private void HandleRelayedMessage(RelayMessage message)
+    {
+        MirrorToGameChat(message);
+        PlayKeywordSound(message);
+    }
+
     private void MirrorToGameChat(RelayMessage message)
     {
         if (!config.AlsoPrintToGameChat)
@@ -152,6 +172,26 @@ public sealed class Plugin : IDalamudPlugin
         catch (Exception ex)
         {
             log.Error(ex, "Failed to mirror message to game chat.");
+        }
+    }
+
+    /// <summary>Optional audio ping on keyword hits — for hearing users who
+    /// can't run Discord audio. The visual pulse remains the primary cue.</summary>
+    private void PlayKeywordSound(RelayMessage message)
+    {
+        if (!config.PlaySoundOnKeyword)
+            return;
+        if (MessageTransform.FirstKeywordMatch(message.Text, config.KeywordRules) is null)
+            return;
+
+        try
+        {
+            FFXIVClientStructs.FFXIV.Client.UI.UIGlobals.PlayChatSoundEffect(
+                (uint)Math.Clamp(config.KeywordSoundId, 1, 16));
+        }
+        catch (Exception ex)
+        {
+            log.Error(ex, "Failed to play keyword sound.");
         }
     }
 
@@ -171,6 +211,7 @@ public sealed class Plugin : IDalamudPlugin
         windowSystem.RemoveAllWindows();
         relayWindow.Dispose();
         configWindow.Dispose();
+        fontAtlas.Dispose();
 
         commandManager.RemoveHandler(CommandName);
     }

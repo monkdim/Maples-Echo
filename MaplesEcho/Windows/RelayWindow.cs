@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Windowing;
 using MaplesEcho.Services;
 
@@ -21,8 +22,27 @@ public sealed class RelayWindow : Window, IDisposable
     private readonly Configuration config;
     private readonly MessageStore store;
     private readonly DiscordRelayService discord;
+    private readonly IFontAtlas fontAtlas;
     private readonly Func<bool> inCombat;
     private readonly Action save;
+    private readonly Action<string> addGlossaryRule;
+
+    // Real font handles built at the configured pixel size — crisp text instead
+    // of bilinear-scaled glyphs. One slot per profile so the combat transition
+    // never triggers a rebuild; while a build is in flight (or failed), drawing
+    // falls back to the old scale path so text is never missing.
+    private sealed class FontSlot
+    {
+        public IFontHandle? Handle;
+        public float BuiltSize;
+        public float PendingSize;
+        public double PendingSince;
+    }
+
+    private readonly FontSlot normalFont = new();
+    private readonly FontSlot combatFont = new();
+
+    private const double FontRebuildDebounceSeconds = 0.35;
 
     private bool stickToBottom = true;
 
@@ -40,14 +60,23 @@ public sealed class RelayWindow : Window, IDisposable
     private const float PulseSeconds = 0.4f;
     private const float KeywordPulseSeconds = 0.9f;
 
-    public RelayWindow(Configuration config, MessageStore store, DiscordRelayService discord, Func<bool> inCombat, Action save)
+    public RelayWindow(
+        Configuration config,
+        MessageStore store,
+        DiscordRelayService discord,
+        IFontAtlas fontAtlas,
+        Func<bool> inCombat,
+        Action save,
+        Action<string> addGlossaryRule)
         : base("Maple's Echo##MaplesEchoRelay")
     {
         this.config = config;
         this.store = store;
         this.discord = discord;
+        this.fontAtlas = fontAtlas;
         this.inCombat = inCombat;
         this.save = save;
+        this.addGlossaryRule = addGlossaryRule;
 
         IsOpen = config.RelayWindowOpen;
         SizeConstraints = new WindowSizeConstraints
@@ -166,17 +195,61 @@ public sealed class RelayWindow : Window, IDisposable
     public override void Draw()
     {
         HandleFontZoom();
+        UpdateFontSlot(normalFont, config.FontSize);
+        if (config.CombatModeEnabled)
+            UpdateFontSlot(combatFont, config.CombatFontSize);
 
-        // Live font sizing without an atlas rebuild. Crisp custom-font sizing via
-        // ManagedFontAtlas is a later refinement; scale gets the accessibility
-        // win (readable size) now, safely. (Plan §7 — "ship size + colors first")
-        ImGui.SetWindowFontScale(Math.Max(0.5f, EffectiveFontSize / FontScaleBaseline));
+        // Crisp text: push a real font built at the configured size. Until the
+        // async atlas build lands (first frames, or right after a size change),
+        // fall back to scaled drawing so text is never missing. (Plan §7)
+        var handle = (CombatActive ? combatFont : normalFont).Handle;
+        var crisp = handle is { Available: true };
+        if (crisp)
+            handle!.Push();
+        else
+            ImGui.SetWindowFontScale(Math.Max(0.5f, EffectiveFontSize / FontScaleBaseline));
 
         DrawStatusBar();
         ImGui.Separator();
         DrawMessages();
 
-        ImGui.SetWindowFontScale(1f);
+        if (crisp)
+            handle!.Pop();
+        else
+            ImGui.SetWindowFontScale(1f);
+    }
+
+    /// <summary>Build (or debounced-rebuild) a slot's font handle at the wanted
+    /// size. The debounce keeps slider drags and Ctrl+scroll from queueing an
+    /// atlas rebuild per tick; the old handle keeps rendering until the new one
+    /// is ready, then is disposed.</summary>
+    private void UpdateFontSlot(FontSlot slot, float wantSize)
+    {
+        wantSize = MathF.Max(8f, wantSize);
+        if (slot.Handle != null && wantSize == slot.BuiltSize)
+        {
+            slot.PendingSize = 0f;
+            return;
+        }
+
+        if (slot.Handle != null)
+        {
+            if (wantSize != slot.PendingSize)
+            {
+                slot.PendingSize = wantSize;
+                slot.PendingSince = ImGui.GetTime();
+                return;
+            }
+
+            if (ImGui.GetTime() - slot.PendingSince < FontRebuildDebounceSeconds)
+                return;
+        }
+
+        var old = slot.Handle;
+        slot.Handle = fontAtlas.NewDelegateFontHandle(e => e.OnPreBuild(tk => tk.AddDalamudDefaultFont(wantSize, null)));
+        slot.BuiltSize = wantSize;
+        slot.PendingSize = 0f;
+        old?.Dispose();
     }
 
     private void DrawStatusBar()
@@ -360,6 +433,27 @@ public sealed class RelayWindow : Window, IDisposable
         {
             PushWrappedColored(config.TextColor, m.Text);
         }
+
+        DrawMessageContextMenu(m);
+    }
+
+    /// <summary>
+    /// Right-click a line to act on it in the moment: copy it, or turn a
+    /// mistranscription into a glossary rule while it's on screen — corrections
+    /// happen when the failure is seen, not from memory after the raid.
+    /// Unreachable in click-through mode, like every mouse interaction here.
+    /// </summary>
+    private void DrawMessageContextMenu(RelayMessage m)
+    {
+        if (!ImGui.BeginPopupContextItem($"##msgctx{m.SourceMessageId}"))
+            return;
+
+        if (ImGui.MenuItem("Copy text"))
+            ImGui.SetClipboardText(m.Text);
+        if (ImGui.MenuItem("Add glossary rule from this line…"))
+            addGlossaryRule(m.Text);
+
+        ImGui.EndPopup();
     }
 
     private static void PushWrappedColored(Vector4 color, string text)
@@ -392,5 +486,7 @@ public sealed class RelayWindow : Window, IDisposable
 
     public void Dispose()
     {
+        normalFont.Handle?.Dispose();
+        combatFont.Handle?.Dispose();
     }
 }
