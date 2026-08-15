@@ -31,6 +31,7 @@ dist/
 # and re-commit it on every version bump. (A GitHub Release is the cleaner
 # long-term host if you'd rather keep binaries out of git.)
 !repo/latest.zip
+!repo/testing.zip
 
 # OS noise
 .DS_Store
