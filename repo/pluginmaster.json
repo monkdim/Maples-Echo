@@ -3,7 +3,7 @@
     "Author": "monkdim",
     "Name": "Maple's Echo",
     "InternalName": "MaplesEcho",
-    "AssemblyVersion": "0.1.1.0",
+    "AssemblyVersion": "0.3.0.0",
     "TestingAssemblyVersion": "0.3.0.0",
     "TestingDalamudApiLevel": 15,
     "Description": "Displays a Discord channel's live voice-to-text callouts inside FFXIV, in a dedicated, fully customizable accessibility window. One-way relay (Discord to game). No fork needed — install, then enter your own Discord bot token and channel in settings. See the README for the one-time Discord setup.",
