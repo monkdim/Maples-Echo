@@ -216,6 +216,7 @@ public sealed class ConfigWindow : Window, IDisposable
         CheckSave("Click-through — window ignores the mouse (uncheck here to move or scroll it)", () => config.ClickThrough, v => config.ClickThrough = v);
         CheckSave("Hide during cutscenes", () => config.HideDuringCutscenes, v => config.HideDuringCutscenes = v);
         CheckSave("Also mirror to game chat log", () => config.AlsoPrintToGameChat, v => config.AlsoPrintToGameChat = v);
+        CheckSave("Print a chat notice when the relay disconnects/reconnects", () => config.NotifyDisconnectInChat, v => config.NotifyDisconnectInChat = v);
     }
 
     // ---------------------------------------------------------------- Combat
@@ -311,11 +312,15 @@ public sealed class ConfigWindow : Window, IDisposable
             ImGui.SameLine();
             var find = rule.Find;
             ImGui.SetNextItemWidth(140);
-            if (ImGui.InputText("find", ref find, 100)) { rule.Find = find; save(); }
+            if (ImGui.InputText("find", ref find, 100))
+                rule.Find = find;
+            SaveOnRelease();
             ImGui.SameLine();
             var repl = rule.Replace;
             ImGui.SetNextItemWidth(140);
-            if (ImGui.InputText("replace", ref repl, 100)) { rule.Replace = repl; save(); }
+            if (ImGui.InputText("replace", ref repl, 100))
+                rule.Replace = repl;
+            SaveOnRelease();
             ImGui.SameLine();
             var word = rule.WholeWord;
             if (ImGui.Checkbox("word", ref word)) { rule.WholeWord = word; save(); }
@@ -355,10 +360,31 @@ public sealed class ConfigWindow : Window, IDisposable
             ImGui.SameLine();
             var word = rule.Word;
             ImGui.SetNextItemWidth(160);
-            if (ImGui.InputText("##kwword", ref word, 60)) { rule.Word = word; save(); }
+            if (ImGui.InputText("##kwword", ref word, 60))
+                rule.Word = word;
+            SaveOnRelease();
             ImGui.SameLine();
             var whole = rule.WholeWord;
             if (ImGui.Checkbox("whole word", ref whole)) { rule.WholeWord = whole; save(); }
+            ImGui.SameLine();
+            if (ImGui.ArrowButton("##kwup", ImGuiDir.Up) && i > 0)
+            {
+                // First match wins, so order is priority — make it editable.
+                (config.KeywordRules[i - 1], config.KeywordRules[i]) = (config.KeywordRules[i], config.KeywordRules[i - 1]);
+                save();
+                ImGui.PopID();
+                break;
+            }
+
+            ImGui.SameLine();
+            if (ImGui.ArrowButton("##kwdown", ImGuiDir.Down) && i < config.KeywordRules.Count - 1)
+            {
+                (config.KeywordRules[i + 1], config.KeywordRules[i]) = (config.KeywordRules[i], config.KeywordRules[i + 1]);
+                save();
+                ImGui.PopID();
+                break;
+            }
+
             ImGui.SameLine();
             if (ImGui.Button("X")) { config.KeywordRules.RemoveAt(i); save(); ImGui.PopID(); break; }
             ImGui.PopID();
@@ -407,14 +433,25 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.Separator();
         ImGui.TextWrapped("Starter content: a curated FFXIV keyword and glossary set (stack, spread, " +
                           "in, out, …). Merges into your lists without touching anything you've added — " +
-                          "edit or delete freely afterwards on the Glossary & Keywords tab.");
+                          "edit or delete freely afterwards on the Glossary & Keywords tab. The " +
+                          "colorblind-friendly variant uses an Okabe–Ito-based palette and recolors " +
+                          "the starter words if they're already in your list.");
         if (ImGui.Button("Load FFXIV starter keywords & glossary"))
         {
-            var (kw, gl) = Presets.ApplyStarterPack(config);
+            var (kw, rec, gl) = Presets.ApplyStarterPack(config);
             save();
             presetNotice = kw + gl == 0
                 ? "Nothing to add — the starter set is already in your lists."
                 : $"Added {kw} keyword(s) and {gl} glossary rule(s).";
+        }
+
+        if (ImGui.Button("Load starter with colorblind-friendly colors"))
+        {
+            var (kw, rec, gl) = Presets.ApplyStarterPack(config, colorblindFriendly: true);
+            save();
+            presetNotice = kw + rec + gl == 0
+                ? "Nothing to change — the colorblind starter set is already in place."
+                : $"Added {kw} keyword(s), recolored {rec}, added {gl} glossary rule(s).";
         }
 
         if (!string.IsNullOrEmpty(presetNotice))

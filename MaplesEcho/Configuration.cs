@@ -171,6 +171,11 @@ public class Configuration : IPluginConfiguration
     /// via IChatGui.Print(). Off by default. (Plan §2)</summary>
     public bool AlsoPrintToGameChat { get; set; } = false;
 
+    /// <summary>Print a native-chat line when a working relay dies (and when it
+    /// recovers). On by default — with the window closed or hidden, this is the
+    /// only cue anywhere that callouts stopped flowing.</summary>
+    public bool NotifyDisconnectInChat { get; set; } = true;
+
     /// <summary>Hide the window title bar so a new message can never steal input
     /// mid-pull. (Plan §7 — "a window grabbing focus during a mechanic is a wipe")</summary>
     public bool HideTitleBar { get; set; } = false;

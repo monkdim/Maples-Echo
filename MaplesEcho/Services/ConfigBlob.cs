@@ -122,6 +122,7 @@ public static class ConfigBlob
         to.HideDuringCutscenes = from.HideDuringCutscenes;
         to.RelayWindowOpen = from.RelayWindowOpen;
         to.AlsoPrintToGameChat = from.AlsoPrintToGameChat;
+        to.NotifyDisconnectInChat = from.NotifyDisconnectInChat;
         to.HideTitleBar = from.HideTitleBar;
     }
 }
