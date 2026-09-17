@@ -48,6 +48,13 @@ public sealed class DiscordRelayService : IDisposable
     public string StatusDetail { get; private set; } = "Not connected. Paste a bot token in settings.";
     public DateTime? LastMessageReceived { get; private set; }
 
+    /// <summary>Called on every state transition, from arbitrary threads —
+    /// subscribers marshal to the framework thread themselves.</summary>
+    public Action<RelayState, RelayState>? OnStateChanged { get; set; }
+
+    private DateTime stateSince = DateTime.Now;
+    private DateTime lastWatchdogRestart = DateTime.MinValue;
+
     public DiscordRelayService(Configuration config, MessageStore store, IFramework framework, IPluginLog log)
     {
         this.config = config;
@@ -102,8 +109,10 @@ public sealed class DiscordRelayService : IDisposable
         }
         catch (Exception ex)
         {
+            // Not a rejected token — a network hiccup, DNS, proxy, whatever.
+            // Disconnected (not InvalidToken) so the watchdog keeps retrying.
             log.Error(ex, "Failed to start Discord relay.");
-            SetState(RelayState.InvalidToken, $"Login failed: {ex.Message}");
+            SetState(RelayState.Disconnected, $"Connection failed: {ex.Message} — retrying automatically.");
         }
     }
 
@@ -307,8 +316,47 @@ public sealed class DiscordRelayService : IDisposable
 
     private void SetState(RelayState state, string detail)
     {
+        var prev = State;
         State = state;
         StatusDetail = detail;
+        if (prev != state)
+        {
+            stateSince = DateTime.Now;
+            OnStateChanged?.Invoke(prev, state);
+        }
+    }
+
+    /// <summary>Reconnect using the saved config — the status-bar button and
+    /// the watchdog both come through here.</summary>
+    public void Reconnect() => StartAsync(config.BotToken, config.ChannelId);
+
+    private const int WatchdogDisconnectedSeconds = 60;
+    private const int WatchdogConnectingSeconds = 120;
+
+    /// <summary>
+    /// Called every framework update. Discord.Net auto-reconnects transient
+    /// drops, but after a PC sleep or a network change the gateway can hang
+    /// disconnected (or stuck connecting) forever — and a dead relay IS the
+    /// accessibility failure. Restart the client when stuck. InvalidToken is
+    /// exempt: retrying a bad token only gets the account rate-limited.
+    /// </summary>
+    public void TickWatchdog()
+    {
+        if (disposed || string.IsNullOrWhiteSpace(config.BotToken))
+            return;
+
+        var now = DateTime.Now;
+        var stuckFor = (now - stateSince).TotalSeconds;
+        var stuck = (State == RelayState.Disconnected && stuckFor > WatchdogDisconnectedSeconds)
+                    || (State == RelayState.Connecting && stuckFor > WatchdogConnectingSeconds);
+        if (!stuck)
+            return;
+        if ((now - lastWatchdogRestart).TotalSeconds < WatchdogDisconnectedSeconds)
+            return;
+
+        lastWatchdogRestart = now;
+        log.Warning($"Relay stuck in {State} for {(int)stuckFor}s — watchdog restarting the connection.");
+        Reconnect();
     }
 
     private async Task StopInternalAsync()

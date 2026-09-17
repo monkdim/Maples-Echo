@@ -267,6 +267,14 @@ public sealed class RelayWindow : Window, IDisposable
         ImGui.SameLine();
         ImGui.TextUnformatted(label);
 
+        // Recovery without a settings trip: reconnect right from the window.
+        if (IsDisconnected())
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Reconnect"))
+                discord.Reconnect();
+        }
+
         if (discord.LastMessageReceived is { } last)
         {
             var age = DateTime.Now - last;
@@ -275,11 +283,15 @@ public sealed class RelayWindow : Window, IDisposable
         }
 
         // Right-aligned Clear, for wiping last pull's callouts between pulls.
-        // Unreachable in click-through mode by design; /mapleecho clear remains.
-        var clearWidth = ImGui.CalcTextSize("Clear").X + ImGui.GetStyle().FramePadding.X * 2f;
-        ImGui.SameLine(MathF.Max(0f, ImGui.GetContentRegionMax().X - clearWidth));
-        if (ImGui.SmallButton("Clear"))
-            store.Clear();
+        // Hidden in click-through mode — a button that can't be clicked reads
+        // as broken; /mapleecho clear remains the path there.
+        if (!config.ClickThrough)
+        {
+            var clearWidth = ImGui.CalcTextSize("Clear").X + ImGui.GetStyle().FramePadding.X * 2f;
+            ImGui.SameLine(MathF.Max(0f, ImGui.GetContentRegionMax().X - clearWidth));
+            if (ImGui.SmallButton("Clear"))
+                store.Clear();
+        }
     }
 
     private string TimeFormat => config.Use24HourTime ? "HH:mm" : "h:mm tt";

@@ -29,26 +29,34 @@ public static class Presets
     }
 
     /// <summary>
-    /// Seed the keyword and glossary lists with a curated FFXIV starter set so
-    /// both features show value before any manual data entry. Merges only —
-    /// existing entries are never overwritten or duplicated, and everything
-    /// added is editable/removable like any hand-made rule. Colors are bright
-    /// enough to read on the shipped dark backgrounds.
+    /// Starter keywords with two palettes: the default bright set, and a
+    /// colorblind-friendly set based on Okabe–Ito (the blue brightened to stay
+    /// legible on the shipped dark backgrounds). Words carry the meaning either
+    /// way — color is reinforcement, never the only signal.
     /// </summary>
-    public static (int KeywordsAdded, int GlossaryAdded) ApplyStarterPack(Configuration c)
+    private static readonly (string Word, Vector4 Default, Vector4 Colorblind)[] StarterKeywords =
     {
-        var starterKeywords = new KeywordRule[]
-        {
-            new() { Word = "stack",       Color = new(0.35f, 0.90f, 0.45f, 1f) }, // green
-            new() { Word = "spread",      Color = new(1.00f, 0.85f, 0.30f, 1f) }, // yellow
-            new() { Word = "in",          Color = new(0.40f, 0.85f, 1.00f, 1f) }, // cyan
-            new() { Word = "out",         Color = new(1.00f, 0.60f, 0.25f, 1f) }, // orange
-            new() { Word = "stop",        Color = new(1.00f, 0.35f, 0.35f, 1f) }, // red
-            new() { Word = "tank buster", Color = new(0.95f, 0.50f, 0.90f, 1f) }, // magenta
-            new() { Word = "tower",       Color = new(0.75f, 0.60f, 1.00f, 1f) }, // purple
-            new() { Word = "bait",        Color = new(1.00f, 0.55f, 0.75f, 1f) }, // pink
-        };
+        ("stack",       new(0.35f, 0.90f, 0.45f, 1f), new(0.00f, 0.62f, 0.45f, 1f)),
+        ("spread",      new(1.00f, 0.85f, 0.30f, 1f), new(0.94f, 0.89f, 0.26f, 1f)),
+        ("in",          new(0.40f, 0.85f, 1.00f, 1f), new(0.34f, 0.71f, 0.91f, 1f)),
+        ("out",         new(1.00f, 0.60f, 0.25f, 1f), new(0.90f, 0.62f, 0.00f, 1f)),
+        ("stop",        new(1.00f, 0.35f, 0.35f, 1f), new(0.84f, 0.37f, 0.00f, 1f)),
+        ("tank buster", new(0.95f, 0.50f, 0.90f, 1f), new(0.80f, 0.47f, 0.65f, 1f)),
+        ("tower",       new(0.75f, 0.60f, 1.00f, 1f), new(0.25f, 0.56f, 0.87f, 1f)),
+        ("bait",        new(1.00f, 0.55f, 0.75f, 1f), new(0.93f, 0.93f, 0.93f, 1f)),
+    };
 
+    /// <summary>
+    /// Seed the keyword and glossary lists with a curated FFXIV starter set so
+    /// both features show value before any manual data entry. Merge-only for
+    /// the default palette — existing entries are never overwritten or
+    /// duplicated. The colorblind variant additionally recolors starter words
+    /// already in the list (that's its whole point); custom words are never
+    /// touched. Everything added is editable/removable like any hand-made rule.
+    /// </summary>
+    public static (int KeywordsAdded, int KeywordsRecolored, int GlossaryAdded) ApplyStarterPack(
+        Configuration c, bool colorblindFriendly = false)
+    {
         var starterGlossary = new GlossaryRule[]
         {
             new() { Find = "a o e", Replace = "AOE" },
@@ -57,12 +65,21 @@ public static class Presets
         };
 
         var kw = 0;
-        foreach (var rule in starterKeywords)
+        var recolored = 0;
+        foreach (var (word, defaultColor, colorblindColor) in StarterKeywords)
         {
-            if (c.KeywordRules.Exists(r => r.Word.Equals(rule.Word, StringComparison.OrdinalIgnoreCase)))
-                continue;
-            c.KeywordRules.Add(rule);
-            kw++;
+            var color = colorblindFriendly ? colorblindColor : defaultColor;
+            var existing = c.KeywordRules.Find(r => r.Word.Equals(word, StringComparison.OrdinalIgnoreCase));
+            if (existing is null)
+            {
+                c.KeywordRules.Add(new KeywordRule { Word = word, Color = color });
+                kw++;
+            }
+            else if (colorblindFriendly && existing.Color != color)
+            {
+                existing.Color = color;
+                recolored++;
+            }
         }
 
         var gl = 0;
@@ -74,7 +91,7 @@ public static class Presets
             gl++;
         }
 
-        return (kw, gl);
+        return (kw, recolored, gl);
     }
 
     public static void Minimal(Configuration c)

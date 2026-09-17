@@ -65,7 +65,12 @@ public sealed class Plugin : IDalamudPlugin
         {
             OnSpeakerSeen = RememberSpeaker,
             OnMessageRelayed = HandleRelayedMessage,
+            OnStateChanged = HandleRelayStateChanged,
         };
+
+        // Watchdog heartbeat: recover a relay that hangs after PC sleep or a
+        // network change, even while the window is closed.
+        framework.Update += OnFrameworkUpdate;
 
         // Crisp text at the configured size: the relay window builds real font
         // handles from this atlas instead of bilinear-scaling the default font.
@@ -149,6 +154,51 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
+    private void OnFrameworkUpdate(IFramework _) => discord.TickWatchdog();
+
+    private bool relayWasLost;
+
+    /// <summary>
+    /// Relay death has no audio cue and, with the window closed or hidden, no
+    /// visual one either — so surface it in the native chat log (on by
+    /// default, opt-out). Fires only when a WORKING relay dies, and once more
+    /// when it comes back; normal connects stay silent.
+    /// </summary>
+    private void HandleRelayStateChanged(RelayState prev, RelayState next)
+    {
+        var wasWorking = prev is RelayState.Connected or RelayState.ConnectedNoContent;
+        var died = next is RelayState.Disconnected or RelayState.InvalidToken;
+
+        if (wasWorking && died)
+        {
+            relayWasLost = true;
+            if (config.NotifyDisconnectInChat)
+                PrintNotice("Maple's Echo: relay disconnected.");
+        }
+        else if (next == RelayState.Connected && relayWasLost)
+        {
+            relayWasLost = false;
+            if (config.NotifyDisconnectInChat)
+                PrintNotice("Maple's Echo: relay reconnected.");
+        }
+    }
+
+    private void PrintNotice(string text)
+    {
+        // State changes fire from Discord.Net threads; chat needs the framework thread.
+        _ = framework.RunOnFrameworkThread(() =>
+        {
+            try
+            {
+                chatGui.Print(text);
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex, "Failed to print relay notice.");
+            }
+        });
+    }
+
     /// <summary>Per stored message, on the framework thread: optional native-chat
     /// mirror and optional keyword sound. Edits don't re-fire this. (Plan §2)</summary>
     private void HandleRelayedMessage(RelayMessage message)
@@ -204,6 +254,7 @@ public sealed class Plugin : IDalamudPlugin
         // per reload gets the bot rate-limited fast. (Plan §8)
         discord.Dispose();
 
+        framework.Update -= OnFrameworkUpdate;
         pluginInterface.UiBuilder.Draw -= DrawUi;
         pluginInterface.UiBuilder.OpenConfigUi -= OpenConfig;
         pluginInterface.UiBuilder.OpenMainUi -= OpenMain;

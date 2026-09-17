@@ -31,6 +31,12 @@ settings that silently revert.
   rules (bad patterns skipped safely, bounded match time).
 - **Keyword sound** (opt-in): chat sound `<se.1>`–`<se.16>` on keyword hits,
   with an in-game Test button. For hearing users who can't run Discord audio.
+- **0.4.0 reliability & polish**: connection watchdog (auto-restart after PC
+  sleep / stuck gateway; bad tokens exempt), status-bar Reconnect button,
+  opt-out chat notices when a working relay dies or recovers, keyword rule
+  reordering (▲▼), colorblind-friendly starter palette (Okabe–Ito based),
+  rule text fields save on release instead of per keystroke, Clear hidden in
+  click-through mode, Discord.Net 3.20.1.
 
 ## Next
 

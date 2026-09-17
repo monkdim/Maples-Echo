@@ -28,17 +28,21 @@ relays those messages into the game.
 - **Click-through mode**: the window ignores the mouse entirely so clicks and
   camera drags pass through to the game mid-fight.
 - Scrolled up to re-read? A **"N new messages ↓"** pill counts what's arriving
-  below; click it to jump back down. Red background tint the moment the relay
-  disconnects — silence and failure are never confusable.
+  below; click it to jump back down.
+- Failure is never silent: red background tint on disconnect, a **Reconnect**
+  button right in the window, an automatic **watchdog** that restarts a relay
+  stuck after PC sleep or a network change, and (on by default) a **notice in
+  the native chat log** when a working relay dies or recovers — so you know
+  even when the window is closed.
 - Transcription bots that post a partial line and then *edit* in the final text
   are handled: the line **corrects itself in place**.
 
 **Keywords** — emphasize the words that matter ("stack", "spread", "in",
 "out", your name). Each keyword gets its own color used for the line, the
 marker, and the flash; whole-word matching keeps "in" from lighting up
-"point"; first match in the list wins. Optional **chat sound ping**
-(`<se.1>`–`<se.16>`) on keyword hits, for hearing users who can't run Discord
-audio.
+"point"; first match in the list wins, and rules reorder with ▲▼. Optional
+**chat sound ping** (`<se.1>`–`<se.16>`) on keyword hits, for hearing users
+who can't run Discord audio.
 
 **Glossary** — find → replace rules that fix common mistranscriptions before
 display, with whole-word and regex options. **Right-click any relayed line**
@@ -49,9 +53,10 @@ profiles: bigger text, hidden timestamps, only the last N seconds of messages.
 Reverts the moment combat ends.
 
 **Presets & sharing** — one-click appearance presets, a curated FFXIV starter
-pack for keywords and glossary, and a config export that is **token-free by
-default**, so a tuned setup is safe to share with another player. Contrast
-ratios are checked live against WCAG targets as you pick colors.
+pack for keywords and glossary (with a **colorblind-friendly palette**
+variant), and a config export that is **token-free by default**, so a tuned
+setup is safe to share with another player. Contrast ratios are checked live
+against WCAG targets as you pick colors.
 
 ---
 
