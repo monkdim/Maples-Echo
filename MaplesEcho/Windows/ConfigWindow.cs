@@ -23,7 +23,8 @@ public sealed class ConfigWindow : Window, IDisposable
     private bool revealToken;
     private string channelIdBuffer = string.Empty;
     private string webhookIdBuffer = string.Empty;
-    private string fetchResult = string.Empty;
+    private HistoricalPreview? historicalPreview;
+    private Task<HistoricalPreview>? previewTask;
 
     private string newGlossaryFind = string.Empty;
     private string newGlossaryReplace = string.Empty;
@@ -35,6 +36,8 @@ public sealed class ConfigWindow : Window, IDisposable
     private string presetNotice = string.Empty;
     private bool includeTokenInExport;
     private bool focusGlossaryTab;
+
+    public Action? OpenWelcome { get; set; }
 
     public ConfigWindow(Configuration config, DiscordRelayService discord, MessageStore store, Action save)
         : base("Maple's Echo — Settings##MaplesEchoConfig")
@@ -68,6 +71,8 @@ public sealed class ConfigWindow : Window, IDisposable
 
     public override void Draw()
     {
+        if (ImGui.SmallButton("Welcome & changelog"))
+            OpenWelcome?.Invoke();
         if (ImGui.BeginTabBar("##mapleTabs"))
         {
             if (ImGui.BeginTabItem("Connection")) { DrawConnection(); ImGui.EndTabItem(); }
@@ -128,20 +133,37 @@ public sealed class ConfigWindow : Window, IDisposable
         }
 
         ImGui.SameLine();
-        if (ImGui.Button("Fetch last 5 (test pipeline)"))
+        // Consume results on the UI thread; overlapping requests are disabled.
+        if (previewTask is { IsCompletedSuccessfully: true })
         {
-            fetchResult = "Fetching…";
-            _ = RunFetchAsync();
+            historicalPreview = previewTask.Result;
+            previewTask = null;
         }
 
-        if (!string.IsNullOrEmpty(fetchResult))
-            ImGui.TextWrapped(fetchResult);
-    }
+        ImGui.BeginDisabled(previewTask != null);
+        if (ImGui.Button("Preview last 5"))
+        {
+            historicalPreview = null;
+            previewTask = discord.FetchRecentAsync(5);
+        }
+        ImGui.EndDisabled();
 
-    private async Task RunFetchAsync()
-    {
-        var result = await discord.FetchRecentAsync(5);
-        fetchResult = result;
+        if (previewTask != null)
+            ImGui.TextUnformatted("Fetching historical preview…");
+
+        if (historicalPreview is { } preview)
+        {
+            ImGui.Separator();
+            ImGui.TextUnformatted("Historical preview — not live callouts");
+            ImGui.TextWrapped(preview.Summary);
+            foreach (var message in preview.Messages)
+            {
+                ImGui.Separator();
+                ImGui.TextUnformatted(message.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz"));
+                ImGui.TextUnformatted(message.Speaker);
+                ImGui.TextWrapped(message.Text);
+            }
+        }
     }
 
     private void DrawStatusLine()

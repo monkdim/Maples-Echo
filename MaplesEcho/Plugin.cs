@@ -36,6 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WindowSystem windowSystem = new("MaplesEcho");
     private readonly RelayWindow relayWindow;
     private readonly ConfigWindow configWindow;
+    private readonly WelcomeWindow welcomeWindow;
 
     public Plugin(
         IDalamudPluginInterface pluginInterface,
@@ -43,7 +44,8 @@ public sealed class Plugin : IDalamudPlugin
         IPluginLog log,
         IFramework framework,
         IChatGui chatGui,
-        ICondition condition)
+        ICondition condition,
+        ITextureProvider textures)
     {
         this.pluginInterface = pluginInterface;
         this.commandManager = commandManager;
@@ -77,6 +79,10 @@ public sealed class Plugin : IDalamudPlugin
         fontAtlas = pluginInterface.UiBuilder.CreateFontAtlas(FontAtlasAutoRebuildMode.Async, true, "MaplesEcho");
 
         configWindow = new ConfigWindow(config, discord, store, Save);
+        welcomeWindow = new WelcomeWindow(config, Save,
+            () => configWindow.IsOpen = true,
+            () => !condition[ConditionFlag.InCombat] && !pluginInterface.UiBuilder.CutsceneActive, textures);
+        configWindow.OpenWelcome = () => welcomeWindow.IsOpen = true;
         relayWindow = new RelayWindow(
             config,
             store,
@@ -87,10 +93,11 @@ public sealed class Plugin : IDalamudPlugin
             text => configWindow!.OpenGlossaryPrefilled(text));
         windowSystem.AddWindow(relayWindow);
         windowSystem.AddWindow(configWindow);
+        windowSystem.AddWindow(welcomeWindow);
 
         commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Toggle the relay window. \"/mapleecho config\" opens settings, \"/mapleecho clear\" clears the window.",
+            HelpMessage = "Toggle the relay window. \"/mapleecho config\" opens settings, \"/mapleecho clear\" clears the window, \"/mapleecho news\" opens the changelog.",
         });
 
         pluginInterface.UiBuilder.Draw += DrawUi;
@@ -116,6 +123,11 @@ public sealed class Plugin : IDalamudPlugin
     private void OnCommand(string command, string args)
     {
         var trimmed = args.Trim();
+        if (trimmed.Equals("news", StringComparison.OrdinalIgnoreCase))
+        {
+            welcomeWindow.IsOpen = true;
+            return;
+        }
         if (trimmed.Equals("config", StringComparison.OrdinalIgnoreCase))
         {
             configWindow.Toggle();

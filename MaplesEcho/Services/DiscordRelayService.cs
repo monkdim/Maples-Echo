@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Discord;
 using Discord.WebSocket;
@@ -196,11 +197,10 @@ public sealed class DiscordRelayService : IDisposable
     }
 
     /// <summary>
-    /// Filter + transform a message into a display-ready <see cref="RelayMessage"/>,
-    /// or null if it has no readable body. Pure and thread-safe; shared by the live
-    /// gateway path and the manual fetch so both relay identically. (Plan §8b)
+    /// Shared text transformation for live messages and historical previews,
+    /// including bots that put their transcription in embeds.
     /// </summary>
-    private RelayMessage? BuildRelay(IMessage msg)
+    private string BuildBody(IMessage msg)
     {
         var body = MessageTransform.TransformBody(msg.Content, config.Glossary);
 
@@ -212,6 +212,12 @@ public sealed class DiscordRelayService : IDisposable
             body = MessageTransform.TransformBody(embedText, config.Glossary);
         }
 
+        return body;
+    }
+
+    private RelayMessage? BuildRelay(IMessage msg)
+    {
+        var body = BuildBody(msg);
         if (string.IsNullOrWhiteSpace(body))
             return null;
 
@@ -263,54 +269,53 @@ public sealed class DiscordRelayService : IDisposable
     }
 
     /// <summary>
-    /// Diagnostic: pull the last few messages from the configured channel so the
-    /// pipeline can be verified end-to-end without waiting for someone to talk.
-    /// Distinguishes channel-not-found / no-access from other failures. (Plan §10b)
+    /// Read-only historical preview for settings. Never queues live callouts or
+    /// changes gateway state / last-live-message time.
     /// </summary>
-    public async Task<string> FetchRecentAsync(int count = 5)
+    public Task<HistoricalPreview> FetchRecentAsync(int count = 5)
     {
         if (client is null || State == RelayState.Disconnected || State == RelayState.InvalidToken)
-            return "Not connected — connect first.";
+            return Task.FromResult(new HistoricalPreview("Not connected — connect first.", []));
 
-        try
+        var previewClient = client;
+        var channelId = config.ChannelId;
+        return FetchRecentAsync(async () =>
         {
-            if (await client.GetChannelAsync(config.ChannelId) is not IMessageChannel channel)
-                return "Channel not found or the bot has no access — check the channel id and the invite permissions.";
+            if (await previewClient.GetChannelAsync(channelId) is not IMessageChannel channel)
+                throw new InvalidOperationException("Channel not found or the bot has no access — check the channel id and invite permissions.");
 
             var messages = await channel.GetMessagesAsync(count).FlattenAsync();
-            var list = messages.ToList();
-            if (list.Count == 0)
-                return "Channel reachable, but no recent messages.";
+            return messages.Reverse().ToList();
+        });
+    }
 
-            var withContent = list.Count(m => !string.IsNullOrEmpty(m.Content));
-            if (withContent == 0)
-                return $"Fetched {list.Count} message(s), but all had empty content — enable the Message Content intent in the Developer Portal.";
-
-            // GetMessagesAsync returns newest-first; relay oldest-first so they
-            // land in the window in the right order — and actually SHOW, so this
-            // button demonstrates the relay, not just reports on it.
-            list.Reverse();
-            var relayed = 0;
-            foreach (var m in list)
+    // The injected history source lets tests exercise the real diagnostic path
+    // without opening a Discord gateway. Input is oldest-first.
+    internal async Task<HistoricalPreview> FetchRecentAsync(Func<Task<IReadOnlyList<IMessage>>> fetch)
+    {
+        try
+        {
+            var messages = await fetch();
+            var matching = messages.Where(PassesFilter).ToList();
+            var preview = new List<HistoricalMessage>();
+            foreach (var message in matching)
             {
-                if (!PassesFilter(m))
-                    continue;
-                if (BuildRelay(m) is { } relay)
-                {
-                    Enqueue(relay);
-                    relayed++;
-                }
+                var body = BuildBody(message);
+                if (!string.IsNullOrWhiteSpace(body))
+                    preview.Add(new HistoricalMessage(
+                        MessageTransform.ExtractSpeaker(message.Author.Username, config.SpeakerPrefix),
+                        body, message.Timestamp, message.Id));
             }
 
-            if (relayed == 0)
-                return $"Fetched {list.Count} message(s), but none passed the filter (webhook-only is on, so plain user/bot messages are skipped). Nothing to show.";
-
-            return $"Fetched {list.Count} message(s) and relayed {relayed} into the window.";
+            var summary = $"Channel reachable. Fetched {messages.Count}; " +
+                          $"matched filters {matching.Count}; readable {preview.Count}. " +
+                          "Historical preview only; this does not verify live delivery.";
+            return new HistoricalPreview(summary, preview);
         }
         catch (Exception ex)
         {
-            log.Error(ex, "FetchRecentAsync failed.");
-            return $"Fetch failed: {ex.Message}";
+            log.Error(ex, "Historical preview failed.");
+            return new HistoricalPreview($"Historical preview failed: {ex.Message}", []);
         }
     }
 

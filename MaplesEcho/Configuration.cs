@@ -18,6 +18,9 @@ public class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 2;
 
+    /// <summary>Local acknowledgement; deliberately excluded from shared settings packs.</summary>
+    public string LastSeenWelcomeVersion { get; set; } = string.Empty;
+
     // ----- Connection ----------------------------------------------------
     /// <summary>Discord bot token. Entered at runtime only — never hardcode,
     /// never commit. Stored unencrypted in Dalamud's config folder. (Plan §10)</summary>
