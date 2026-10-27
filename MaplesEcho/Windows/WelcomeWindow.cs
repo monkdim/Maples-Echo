@@ -20,6 +20,9 @@ public sealed class WelcomeWindow : Window
     private readonly Action save;
     private readonly Action openSettings;
     private readonly Func<bool> canShow;
+    private double animationStarted = double.NaN;
+
+    public override void OnOpen() => animationStarted = double.NaN;
 
     public WelcomeWindow(Configuration config, Action save, Action openSettings, Func<bool> canShow, ITextureProvider textures)
         : base("Welcome to Maple's Echo##MaplesEchoWelcome")
@@ -77,6 +80,13 @@ public sealed class WelcomeWindow : Window
         ImGui.TextWrapped("A few small comforts for your next adventure.");
         ImGui.PopStyleColor();
         ImGui.Spacing();
+        var reduceMotion = config.ReduceWelcomeMotion;
+        if (ImGui.Checkbox("Reduce motion", ref reduceMotion))
+        {
+            config.ReduceWelcomeMotion = reduceMotion;
+            animationStarted = ImGui.GetTime();
+            save();
+        }
         foreach (var change in ReleaseNotes.Changes)
             DrawCard(change, scale);
         ImGui.Spacing();
@@ -127,15 +137,31 @@ public sealed class WelcomeWindow : Window
         // Shared textures are loaded asynchronously and owned by Dalamud. Never
         // retain or dispose a frame's wrap; the rest of the welcome stays usable
         // while the image is loading (or if the texture cannot be decoded).
-        var texture = textures.GetFromManifestResource(typeof(WelcomeWindow).Assembly, MascotResource);
+        if (double.IsNaN(animationStarted))
+            animationStarted = ImGui.GetTime();
+        var texture = textures.GetFromManifestResource(typeof(WelcomeWindow).Assembly, WelcomeAnimation.Resource);
         if (texture.TryGetWrap(out var wrap, out _))
         {
+            var frame = WelcomeAnimation.FrameAt(ImGui.GetTime() - animationStarted, config.ReduceWelcomeMotion);
+            var (uvMin, uvMax) = WelcomeAnimation.UvFor(frame);
             var height = 120f * scale;
-            var size = new Vector2(height * wrap.Width / wrap.Height, height);
+            var size = new Vector2(height * (wrap.Width / 3f) / (wrap.Height / 2f), height);
             if (size.X > width)
                 size *= width / size.X;
             var position = start + new Vector2((width - size.X) / 2f, 0);
-            ImGui.GetWindowDrawList().AddImage(wrap.Handle, position, position + size);
+            ImGui.GetWindowDrawList().AddImage(wrap.Handle, position, position + size, uvMin, uvMax);
+        }
+        else
+        {
+            var still = textures.GetFromManifestResource(typeof(WelcomeWindow).Assembly, MascotResource);
+            if (still.TryGetWrap(out var fallback, out _))
+            {
+                var size = new Vector2(120f * scale * fallback.Width / fallback.Height, 120f * scale);
+                if (size.X > width)
+                    size *= width / size.X;
+                var position = start + new Vector2((width - size.X) / 2f, 0);
+                ImGui.GetWindowDrawList().AddImage(fallback.Handle, position, position + size);
+            }
         }
         ImGui.Dummy(new Vector2(width, 128f * scale));
     }

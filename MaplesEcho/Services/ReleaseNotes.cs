@@ -15,11 +15,11 @@ public static class ReleaseNotes
 
     public static readonly Change[] Changes =
     [
-        new("Everyone gets a voice",
-            "Choose Transcriptions + typed player messages in Connection settings to include typed replies from the same Discord channel."),
-        new("Names you know",
-            "Typed replies use server display names, falling back to Discord display names or usernames."),
-        new("A little less noise",
-            "Ordinary bot replies stay out. Scriptly transcriptions and your optional webhook filter still work as before."),
+        new("A little hello from Maple",
+            "Maple now gives an occasional blink and a tiny ear twitch in the welcome window."),
+        new("Comfort comes first",
+            "Turn on Reduce motion above to keep Maple still. Your choice is remembered between sessions."),
+        new("The same calm corner",
+            "Your cozy colors and rounded cards stay still, so the update notes remain easy to read."),
     ];
 }

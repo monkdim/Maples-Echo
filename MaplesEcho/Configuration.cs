@@ -21,6 +21,9 @@ public class Configuration : IPluginConfiguration
     /// <summary>Local acknowledgement; deliberately excluded from shared settings packs.</summary>
     public string LastSeenWelcomeVersion { get; set; } = string.Empty;
 
+    /// <summary>Local accessibility preference; shared packs do not overwrite it.</summary>
+    public bool ReduceWelcomeMotion { get; set; } = false;
+
     // ----- Connection ----------------------------------------------------
     /// <summary>Discord bot token. Entered at runtime only — never hardcode,
     /// never commit. Stored unencrypted in Dalamud's config folder. (Plan §10)</summary>

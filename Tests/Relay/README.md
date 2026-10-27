@@ -62,3 +62,12 @@ In-game verification:
 7. Confirm the Viera badge has transparent edges, intact ears and speech bubble,
    and keeps its proportions at different UI scales. Reopen the window after
    leaving it closed for a while to check asynchronous texture reload.
+
+## Welcome animation
+
+Check /mapleecho news: a brief blink starts around 2.8 seconds and an ear twitch
+around 6.5 seconds, repeating every 12 seconds. Text and cards must remain still.
+Toggle Reduce motion during each movement: Maple must immediately become still.
+Close/reopen and reload the plugin to verify the preference persists. Import a
+shared settings pack and confirm it does not override this local preference.
+Check narrow widths and larger fonts for cropped ears or adjacent-frame bleed.
