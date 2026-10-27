@@ -223,7 +223,7 @@ public sealed class DiscordRelayService : IDisposable
 
         return new RelayMessage
         {
-            Speaker = MessageTransform.ExtractSpeaker(msg.Author.Username, config.SpeakerPrefix),
+            Speaker = SpeakerName(msg.Author, msg.Source),
             Text = body,
             ReceivedAt = DateTime.Now,
             SourceMessageId = msg.Id,
@@ -249,12 +249,9 @@ public sealed class DiscordRelayService : IDisposable
         if (config.ChannelId != 0 && msg.Channel.Id != config.ChannelId)
             return false;
 
-        if (config.WebhookMessagesOnly)
+        var isWebhook = msg.Source == MessageSource.Webhook || msg.Author.IsWebhook;
+        if (isWebhook)
         {
-            var isWebhook = msg.Source == MessageSource.Webhook || msg.Author.IsWebhook;
-            if (!isWebhook)
-                return false;
-
             // Optional pin to a specific webhook id. For a webhook-sourced
             // message the author implements IWebhookUser.
             if (config.SourceWebhookId != 0)
@@ -263,9 +260,23 @@ public sealed class DiscordRelayService : IDisposable
                 if (webhookId != config.SourceWebhookId)
                     return false;
             }
+            return true;
         }
 
-        return true;
+        return !config.WebhookMessagesOnly
+               && !msg.Author.IsBot
+               && msg.Source == MessageSource.User
+               && msg.Type is MessageType.Default or MessageType.Reply;
+    }
+
+    private string SpeakerName(IUser author, MessageSource source)
+    {
+        if (source == MessageSource.Webhook || author.IsWebhook)
+            return MessageTransform.ExtractSpeaker(author.Username, config.SpeakerPrefix);
+        var nickname = (author as IGuildUser)?.Nickname;
+        if (!string.IsNullOrWhiteSpace(nickname))
+            return nickname;
+        return !string.IsNullOrWhiteSpace(author.GlobalName) ? author.GlobalName : author.Username;
     }
 
     /// <summary>
@@ -303,7 +314,7 @@ public sealed class DiscordRelayService : IDisposable
                 var body = BuildBody(message);
                 if (!string.IsNullOrWhiteSpace(body))
                     preview.Add(new HistoricalMessage(
-                        MessageTransform.ExtractSpeaker(message.Author.Username, config.SpeakerPrefix),
+                        SpeakerName(message.Author, message.Source),
                         body, message.Timestamp, message.Id));
             }
 

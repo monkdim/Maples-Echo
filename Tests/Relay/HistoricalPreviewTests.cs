@@ -31,7 +31,7 @@ public sealed class HistoricalPreviewTests
 
     private sealed class Fixture
     {
-        public Configuration Config { get; } = new() { ChannelId = 42 };
+        public Configuration Config { get; } = new() { ChannelId = 42, WebhookMessagesOnly = true };
         public MessageStore Store { get; } = new(20);
         public DiscordRelayService Relay { get; }
         public int Arrivals { get; private set; }

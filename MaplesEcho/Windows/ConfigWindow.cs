@@ -110,9 +110,10 @@ public sealed class ConfigWindow : Window, IDisposable
                 config.ChannelId = id;
         }
 
-        var webhookOnly = config.WebhookMessagesOnly;
-        if (ImGui.Checkbox("Webhook messages only (recommended — hides bot command replies)", ref webhookOnly))
-            config.WebhookMessagesOnly = webhookOnly;
+        var mode = config.WebhookMessagesOnly ? 0 : 1;
+        if (ImGui.Combo("Messages", ref mode, "Transcriptions only\0Transcriptions + typed player messages\0"))
+            config.WebhookMessagesOnly = mode == 0;
+        ImGui.TextWrapped("Ordinary bot replies are excluded. Typed messages use server display names.");
 
         if (ImGui.InputText("Pin to webhook ID (optional, 0 = any)", ref webhookIdBuffer, 40))
             config.SourceWebhookId = ulong.TryParse(webhookIdBuffer.Trim(), out var wid) ? wid : 0;

@@ -29,9 +29,9 @@ public class Configuration : IPluginConfiguration
     /// <summary>Target Discord text channel the transcription bot posts into.</summary>
     public ulong ChannelId { get; set; }
 
-    /// <summary>Only relay webhook-sourced messages. Excludes the transcription
-    /// bot's own command-reply embeds and any human typing in the channel. (Plan §5)</summary>
-    public bool WebhookMessagesOnly { get; set; } = true;
+    /// <summary>True: transcriptions only. False: transcriptions and typed player
+    /// messages. Ordinary bot replies are excluded in both modes.</summary>
+    public bool WebhookMessagesOnly { get; set; } = false;
 
     /// <summary>Optional pin to a single webhook id. 0 = any webhook in the channel.</summary>
     public ulong SourceWebhookId { get; set; }

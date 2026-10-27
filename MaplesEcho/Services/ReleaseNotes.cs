@@ -15,11 +15,11 @@ public static class ReleaseNotes
 
     public static readonly Change[] Changes =
     [
-        new("A peek into the past",
-            "Preview recent Discord messages in settings, with their original date and time."),
-        new("Only fresh callouts",
-            "Historical messages stay separate from your live relay and leave its connection status unchanged."),
-        new("Quiet little previews",
-            "Checking history won't trigger arrival sounds or chat notifications, or reset your last live message time."),
+        new("Everyone gets a voice",
+            "Choose Transcriptions + typed player messages in Connection settings to include typed replies from the same Discord channel."),
+        new("Names you know",
+            "Typed replies use server display names, falling back to Discord display names or usernames."),
+        new("A little less noise",
+            "Ordinary bot replies stay out. Scriptly transcriptions and your optional webhook filter still work as before."),
     ];
 }

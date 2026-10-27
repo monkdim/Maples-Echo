@@ -140,6 +140,16 @@ entered at runtime — never in a file or this repository. Dalamud stores it
 
 ## Commands
 
+### Typed player replies
+
+In settings → Connection → Messages, choose **Transcriptions + typed player
+messages**, then **Save & Connect**. This includes human messages and replies in
+the configured channel alongside transcription webhooks, while excluding ordinary
+bot replies and system messages. Server nicknames are used when available, then
+Discord display names, then usernames. Webhook speaker names keep their existing
+prefix handling. An optional pinned webhook applies only to webhooks, not players.
+Existing users keep their selected mode; new installs default to the combined mode.
+
 - `/mapleecho` — toggle the relay window.
 - `/mapleecho config` — open settings.
 - `/mapleecho clear` — clear the relayed messages (e.g. between pulls).
